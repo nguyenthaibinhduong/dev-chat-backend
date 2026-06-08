@@ -10,6 +10,21 @@ import { Channel, User } from '@myorg/entities';
 import { DatabaseModule } from '@myorg/database';
 import { getKafkaBrokers } from '@myorg/common';
 
+const getMongoUri = (configService: ConfigService): string => {
+  const uri = configService.get<string>('MONGODB_URI');
+  if (uri) return uri;
+
+  const username = encodeURIComponent(
+    configService.get<string>('MONGO_INITDB_ROOT_USERNAME') || 'admin',
+  );
+  const password = encodeURIComponent(
+    configService.get<string>('MONGO_INITDB_ROOT_PASSWORD') || 'password',
+  );
+  const database =
+    configService.get<string>('MONGO_INITDB_DATABASE') || 'dev_chat';
+
+  return `mongodb://${username}:${password}@mongodb:27017/${database}?authSource=admin`;
+};
 
 @Module({
   imports: [
@@ -35,9 +50,7 @@ import { getKafkaBrokers } from '@myorg/common';
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGODB_URI'),
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
+        uri: getMongoUri(configService),
       }),
     }),
 

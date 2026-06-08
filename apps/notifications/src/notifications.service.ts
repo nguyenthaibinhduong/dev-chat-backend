@@ -1,0 +1,350 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Notification, NotificationDocument } from '@myorg/schemas';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Channel, User } from '@myorg/entities';
+import { RpcCustomException } from '@myorg/common';
+import { log } from 'console';
+
+@Injectable()
+export class NotificationService {
+  private readonly logger = new Logger(NotificationService.name);
+
+  constructor(
+    @InjectModel(Notification.name)
+    private notificationModel: Model<NotificationDocument>,
+    @InjectRepository(Channel)
+    private channelRepository: Repository<Channel>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+  ) {}
+
+  //Helpers
+
+  private async getChannelMembers(channelId: string | number) {
+    if (!channelId) return [];
+    const channel = await this.channelRepository.findOne({
+      where: { id: channelId as any },
+      relations: ['users'],
+    });
+    return (channel?.users || []).map((u) => ({
+      id: String(u.id),
+      username: (u as any).username,
+      email: (u as any).email,
+    }));
+  }
+
+  // Tạo notification mới
+  async createNotification(data: any, type = 'message'): Promise<any> {
+    switch (type) {
+      case 'message':
+        return this.createMessageNotification(data);
+      case 'github':
+
+       
+        
+        return this.createGitHubNotification(data);
+      case 'system':
+        return this.createSystemNotification(data);
+      default:
+        throw new RpcCustomException(`Unsupported notification type: ${type}`);
+    }
+  }
+
+  // Tạo notification mới cho tin nhắn
+  private async createMessageNotification(data: any): Promise<any> {
+    const channelId = data?.channel?.id;
+    const senderId = data?.sender?.id;
+
+    console.log(`Creating message notification for channel ${channelId} excluding sender ${senderId}`, data);      
+
+    const members = (await this.getChannelMembers(channelId))
+      .filter((m) => m.id !== String(senderId))
+      .map((m) => m.id);
+
+    const savedNotifications = [];
+
+    for (const member of members) {
+      const notification = new this.notificationModel({
+        userId: member,
+        type: 'message',
+        data: data,
+        read: false,
+        createdAt: new Date(),
+      });
+      const savedNotification = await notification.save();
+      savedNotifications.push(savedNotification);
+    }
+
+    return {
+      notifications: savedNotifications,
+    };
+  }
+
+  private async createGitHubNotification(data: any): Promise<any> {
+    try {
+      const installationId =
+        data?.installationId || data?.installation?.id || data?.github_installation_id;
+      this.logger.log(`GitHub installationId: ${installationId}`);
+
+      if (!installationId) {
+        this.logger.warn('No installationId provided in GitHub payload, skipping notification creation');
+        return { notifications: [] };
+      }
+
+      const user: any = await this.userRepository.findOneBy({
+        github_installation_id: installationId,
+      });
+      this.logger.log(`User found for installation ${installationId}: ${user ? user.id : 'null'}`);
+
+      if (!user) {
+        // Do not throw — just log and return empty result so webhook processing doesn't crash the service
+        this.logger.warn(`No user found for GitHub installation ${installationId}. Skipping notification creation.`);
+        return { notifications: [] };
+      }
+
+      const savedNotifications: any[] = [];
+      const notification = new this.notificationModel({
+        userId: String(user.id),
+        type: 'github',
+        data: data,
+        read: false,
+        createdAt: new Date(),
+      });
+      const savedNotification = await notification.save();
+      savedNotifications.push(savedNotification);
+
+      return {
+        notifications: savedNotifications,
+      };
+    } catch (err: any) {
+      this.logger.error(`Error in createGitHubNotification: ${err?.message || err}`);
+      // Return empty result to avoid propagating an exception to the caller that would crash the microservice
+      return { notifications: [] };
+    }
+  }
+
+  /**
+   * Tạo notification hệ thống cho danh sách user
+   * @param memberIds Danh sách user ID nhận thông báo
+   * @param text Nội dung thông báo
+   * @param type Loại thông báo (mặc định: 'system')
+   * @param additionalData Dữ liệu bổ sung (optional)
+   */
+  private async createSystemNotification(data: {
+    memberIds: (string | number)[];
+    text: string;
+    type?: string;
+    additionalData?: any;
+  }): Promise<any> {
+    try {
+      const { memberIds, text, type = 'system', additionalData = {} } = data;
+
+      if (!memberIds || memberIds.length === 0) {
+        this.logger.warn('No memberIds provided for system notification');
+        return { notifications: [] };
+      }
+
+      if (!text || text.trim() === '') {
+        this.logger.warn('No text provided for system notification');
+        return { notifications: [] };
+      }
+
+      const savedNotifications: any[] = [];
+
+      for (const memberId of memberIds) {
+        const notification = new this.notificationModel({
+          userId: String(memberId),
+          type: type,
+          data: {
+            text: text,
+            timestamp: new Date(),
+            ...additionalData,
+          },
+          read: false,
+          createdAt: new Date(),
+        });
+
+        const savedNotification = await notification.save();
+        savedNotifications.push(savedNotification);
+        this.logger.log(`Created system notification for user ${memberId}`);
+      }
+
+      this.logger.log(
+        `Created ${savedNotifications.length} system notifications`,
+      );
+
+      return {
+        notifications: savedNotifications,
+        count: savedNotifications.length,
+      };
+    } catch (err: any) {
+      this.logger.error(
+        `Error in createSystemNotification: ${err?.message || err}`,
+      );
+      return { notifications: [] };
+    }
+  }
+
+  // Lấy tất cả notification của user
+  async getNotificationsForUser(
+    userId: string,
+    query: {
+      page?: number;
+      limit?: number;
+      read?: boolean;
+      type?: string;
+    } = {},
+  ): Promise<{ notifications: Notification[]; total: number }> {
+    try {
+      const filter: any = { userId };
+      if (query.read !== undefined) {
+        filter.read = query.read;
+      }
+      if (query.type !== undefined) {
+        query.type === '' ? delete filter.type : (filter.type = query.type);
+      }
+
+      const page = query.page || 1;
+      const limit = query.limit || 10;
+      const skip = (page - 1) * limit;
+
+      const [notifications, total] = await Promise.all([
+        this.notificationModel
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .exec(),
+        this.notificationModel.countDocuments(filter).exec(),
+      ]);
+
+      return { notifications, total };
+    } catch (error: any) {
+      this.logger.error(
+        `Error getting notifications for user ${userId}: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  // Đánh dấu notification đã đọc
+  async markAsRead(notificationId: string): Promise<Notification> {
+    try {
+      const notification = await this.notificationModel
+        .findByIdAndUpdate(notificationId, { read: true }, { new: true })
+        .exec();
+
+      if (!notification) {
+        throw new Error(`Notification with ID ${notificationId} not found`);
+      }
+
+      this.logger.log(`Marked notification ${notificationId} as read`);
+      return notification;
+    } catch (error: any) {
+      this.logger.error(
+        `Error marking notification ${notificationId} as read: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  // Đánh dấu tất cả notification của user là đã đọc
+  async markAllAsRead(userId: string): Promise<number> {
+    try {
+      const result = await this.notificationModel
+        .updateMany({ userId, read: false }, { read: true })
+        .exec();
+
+      this.logger.log(
+        `Marked ${result.modifiedCount} notifications as read for user ${userId}`,
+      );
+      return result.modifiedCount;
+    } catch (error: any) {
+      this.logger.error(
+        `Error marking all notifications as read for user ${userId}: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  // Xử lý thông báo tin nhắn mới
+  // async processMessageNotification(messageData: any): Promise<Notification> {
+  //   try {
+  //     // Xác định người nhận thông báo (không gửi thông báo cho người gửi tin nhắn)
+  //     const recipients =
+  //       messageData.channel?.members
+  //         .filter((member) => member.id !== messageData.sender.id)
+  //         .map((member) => member.id) || [];
+
+  //     // Tạo thông báo cho từng người nhận
+  //     const promises = recipients.map((recipientId) =>
+  //       this.createNotification({
+  //         userId: recipientId,
+  //         type: 'message',
+  //         data: {
+  //           messageId: messageData.id,
+  //           channelId: messageData.channel?.id,
+  //           senderId: messageData.sender.id,
+  //           senderName: messageData.sender.username,
+  //           content: messageData.text,
+  //           timestamp: messageData.created_at || new Date(),
+  //         },
+  //       }),
+  //     );
+
+  //     const results = await Promise.all(promises);
+  //     this.logger.log(`Created ${results.length} message notifications`);
+
+  //     // Trả về thông báo đầu tiên hoặc null nếu không có người nhận
+  //     return results[0] || null;
+  //   } catch (error) {
+  //     this.logger.error(
+  //       `Error processing message notification: ${error.message}`,
+  //       error.stack,
+  //     );
+  //     throw error;
+  //   }
+  // }
+
+  // API endpoint để xử lý notification từ Kafka
+  // async send_message_notification(data: any) {
+  //   try {
+  //     const notification = await this.processMessageNotification(data);
+  //     return { success: true, notification };
+  //   } catch (error) {
+  //     this.logger.error(
+  //       `Error in send_message_notification: ${error.message}`,
+  //       error.stack,
+  //     );
+  //     throw error;
+  //   }
+  // }
+
+
+  // Lấy số lượng thông báo chưa đọc của user
+async getNumberOfUnreadNotifications(userId: string): Promise<number> {
+  try {
+    const unreadCount = await this.notificationModel
+      .countDocuments({ 
+        userId: userId,
+        read: false 
+      })
+      .exec();
+
+    this.logger.log(`User ${userId} has ${unreadCount} unread notifications`);
+    return unreadCount;
+  } catch (error: any) {
+    this.logger.error(
+      `Error getting unread notifications count for user ${userId}: ${error.message}`,
+      error.stack,
+    );
+    throw error;
+  }
+}
+}

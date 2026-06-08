@@ -1,0 +1,92 @@
+{
+  "monorepo": true,
+  "root": "apps",
+  "projects": {
+    "auth": {
+      "type": "application",
+      "root": "apps/auth",
+      "sourceRoot": "apps/auth/src",
+      "entryFile": "main",
+      "compilerOptions": {
+        "tsConfigPath": "apps/auth/tsconfig.app.json"
+      }
+    },
+    "chat": {
+      "type": "application",
+      "root": "apps/chat",
+      "sourceRoot": "apps/chat/src",
+      "entryFile": "main",
+      "compilerOptions": {
+        "tsConfigPath": "apps/chat/tsconfig.app.json"
+      }
+    },
+    "gateway": {
+      "type": "application",
+      "root": "apps/gateway",
+      "sourceRoot": "apps/gateway/src",
+      "entryFile": "main",
+      "compilerOptions": {
+        "tsConfigPath": "apps/gateway/tsconfig.app.json"
+      }
+    },
+    "upload": {
+      "type": "application",
+      "root": "apps/upload",
+      "sourceRoot": "apps/upload/src",
+      "entryFile": "main",
+      "compilerOptions": {
+        "tsConfigPath": "apps/upload/tsconfig.app.json"
+      }
+    },
+    "github": {
+      "type": "application",
+      "root": "apps/githubapi",
+      "sourceRoot": "apps/githubapi/src",
+      "entryFile": "main",
+      "compilerOptions": {
+        "tsConfigPath": "apps/githubapi/tsconfig.app.json"
+      }
+    },
+    "entities": {
+      "type": "library",
+      "root": "libs/entities",
+      "sourceRoot": "libs/entities/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/entities/tsconfig.lib.json"
+      }
+    },
+    "database": {
+      "type": "library",
+      "root": "libs/database",
+      "sourceRoot": "libs/database/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/database/tsconfig.lib.json"
+      }
+    },
+    "common": {
+      "type": "library",
+      "root": "libs/common",
+      "sourceRoot": "libs/common/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/common/tsconfig.lib.json"
+      }
+    },
+    "notifications": {
+      "type": "application",
+      "root": "apps/notifications",
+      "entryFile": "main",
+      "sourceRoot": "apps/notifications/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/notifications/tsconfig.app.json"
+      }
+    },
+    "schemas": {
+      "type": "library",
+      "root": "libs/schemas",
+      "sourceRoot": "libs/schemas/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/schemas/tsconfig.lib.json"
+      }
+    }
+  }
+}

@@ -63,6 +63,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     GithubStrategy,
     {
       provide: 'REDIS_CLIENT',
+      inject: [ConfigService],
       useFactory: async (config: ConfigService) => {
         return new Redis({
           host: getEnv('REDIS_HOST', 'localhost'),

@@ -50,6 +50,7 @@ async function bootstrap() {
   app.useWebSocketAdapter(new AuthenticatedSocketIoAdapter(app, corsOptions));
   const port = getEnvNumber('GATEWAY_PORT', 3088);
   await app.listen(port);
+  console.log('🌐 CORS is open for all origins on HTTP API and Socket.IO');
   console.log(`🚀 Gateway running at http://localhost:${port}`);
 }
 bootstrap();

@@ -10,24 +10,9 @@ const common_2 = require("../../../libs/common/src");
 const socket_io_adapter_1 = require("./adapter/socket-io.adapter");
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const body_parser_1 = __importDefault(require("body-parser"));
-function getCorsOrigins() {
-    return Array.from(new Set([process.env.CORS_ORIGINS, process.env.FE_URL]
-        .flatMap((value) => (value !== null && value !== void 0 ? value : '').split(','))
-        .map((origin) => origin.trim())
-        .filter(Boolean)));
-}
 function createCorsOptions() {
-    const allowedOrigins = getCorsOrigins();
-    const allowLocalhost = process.env.NODE_ENV !== 'production';
     return {
-        origin: (origin, callback) => {
-            if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes('*')) {
-                callback(null, true);
-                return;
-            }
-            const isAllowedLocalhost = allowLocalhost && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-            callback(null, allowedOrigins.includes(origin) || isAllowedLocalhost);
-        },
+        origin: true,
         methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
         credentials: true,

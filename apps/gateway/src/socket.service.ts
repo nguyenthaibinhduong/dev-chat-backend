@@ -456,9 +456,10 @@ export class ChatSocketService {
     replyTo?: any;
     isUpdate?: boolean;
     isPin?: boolean;
+    fakeID?: string | number;
     id?: string | number;
   }) {
-    const tempId = Date.now();
+    const tempId = message.fakeID ?? Date.now();
     const now = new Date().toISOString();
     const typeMsg = message.type ?? 'message';
     
@@ -522,8 +523,8 @@ export class ChatSocketService {
         fakeID: tempId,
         isPin: pendingMsg.isPin ?? false,
         isUpdate: message.isUpdate ?? false,
-        id: message.isUpdate ? message.id : null,
-        status: pendingMsg.isUpdated ? (typeMsg === 'remove' ? 'remove' : 'updated') : 'sent',
+        id: message.isUpdate ? message.id : datas.id,
+        status: message.isUpdate ? (typeMsg === 'remove' ? 'remove' : 'updated') : 'sent',
       };
       
       // Emit final message

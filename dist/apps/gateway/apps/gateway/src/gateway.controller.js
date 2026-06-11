@@ -13,6 +13,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GatewayController = void 0;
+const swagger_1 = require("@nestjs/swagger");
 const common_1 = require("@nestjs/common");
 const gateway_service_1 = require("./gateway.service");
 const jwt_auth_guard_1 = require("./guards/jwt-auth.guard");
@@ -722,12 +723,14 @@ let GatewayController = class GatewayController {
 };
 exports.GatewayController = GatewayController;
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Gateway health check', description: 'Checks whether the HTTP gateway process is alive.' }),
     (0, common_1.Get)('health'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], GatewayController.prototype, "health", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Create GitHub App install URL', description: 'Auth required. Calls git/get_install_app_url and returns a GitHub installation redirect URL. JWT user id is encoded in state.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('github-app/redirect'),
     __param(0, (0, common_1.Req)()),
@@ -736,6 +739,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "githubAppRedirect", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Unlink GitHub App installation', description: 'Auth required. Calls git/unlink_github_app for the current JWT user.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('github-app/uninstall'),
     __param(0, (0, common_1.Req)()),
@@ -744,6 +748,10 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "githubAppUninstall", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'GitHub App setup callback', description: 'Callback from GitHub App installation. Persists installation_id, refreshes token info, then redirects to the frontend callback.' }),
+    (0, swagger_1.ApiQuery)({ name: 'installation_id', required: true, description: 'GitHub installation id returned by GitHub App setup.' }),
+    (0, swagger_1.ApiQuery)({ name: 'setup_action', required: false, description: 'GitHub setup action, for example install or update.' }),
+    (0, swagger_1.ApiQuery)({ name: 'state', required: true, description: 'Base64url encoded state containing userId and next frontend URL.' }),
     (0, common_1.Get)('github-app/setup'),
     __param(0, (0, common_1.Query)('installation_id')),
     __param(1, (0, common_1.Query)('setup_action')),
@@ -755,6 +763,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "setup", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'GitHub webhook receiver', description: 'Receives GitHub webhook payload, verifies x-hub-signature-256, then publishes normalized data to Kafka topic github.webhooks.' }),
     (0, common_1.Post)('github-app/webhook'),
     (0, common_1.HttpCode)(200),
     (0, common_1.HttpCode)(201),
@@ -768,6 +777,10 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "handle", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get GitHub commit details', description: 'Auth required. Calls git/getCommitDetails with owner, repo and sha.' }),
+    (0, swagger_1.ApiParam)({ name: 'owner', description: 'GitHub organization or username.' }),
+    (0, swagger_1.ApiParam)({ name: 'repo', description: 'Repository name.' }),
+    (0, swagger_1.ApiParam)({ name: 'sha', description: 'Commit SHA.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('github/commit/:owner/:repo/:sha'),
     __param(0, (0, common_1.Param)('owner')),
@@ -779,6 +792,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getCommitDetails", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Compare two GitHub refs', description: 'Auth required. Calls git/compareCommits with owner, repo, base and head.' }),
+    (0, swagger_1.ApiParam)({ name: 'owner', description: 'GitHub organization or username.' }),
+    (0, swagger_1.ApiParam)({ name: 'repo', description: 'Repository name.' }),
+    (0, swagger_1.ApiParam)({ name: 'base', description: 'Base branch, tag or commit SHA.' }),
+    (0, swagger_1.ApiParam)({ name: 'head', description: 'Head branch, tag or commit SHA.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('github/compare/:owner/:repo/:base/:head'),
     __param(0, (0, common_1.Param)('owner')),
@@ -791,6 +809,10 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "compareCommits", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get commit diff', description: 'Auth required. Calls git/getCommitDiff for a single commit.' }),
+    (0, swagger_1.ApiParam)({ name: 'owner', description: 'GitHub organization or username.' }),
+    (0, swagger_1.ApiParam)({ name: 'repo', description: 'Repository name.' }),
+    (0, swagger_1.ApiParam)({ name: 'sha', description: 'Commit SHA.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('github/commit-diff/:owner/:repo/:sha'),
     __param(0, (0, common_1.Param)('owner')),
@@ -802,6 +824,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getCommitDiff", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Analyze commit diff', description: 'Auth required. Calls git/getCommitAnalysis and allows an optional prompt for AI analysis context.' }),
+    (0, swagger_1.ApiParam)({ name: 'owner', description: 'GitHub organization or username.' }),
+    (0, swagger_1.ApiParam)({ name: 'repo', description: 'Repository name.' }),
+    (0, swagger_1.ApiParam)({ name: 'sha', description: 'Commit SHA.' }),
+    (0, swagger_1.ApiQuery)({ name: 'prompt', required: false, description: 'Optional custom analysis instruction.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('github/commit-analysis/:owner/:repo/:sha'),
     __param(0, (0, common_1.Param)('owner')),
@@ -814,6 +841,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getCommitAnalysis", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Start GitHub OAuth login', description: 'Builds the GitHub OAuth authorization URL. frontendUrl is encoded into state and used after backend callback completes.' }),
+    (0, swagger_1.ApiQuery)({ name: 'frontendUrl', required: false, description: 'Frontend origin to redirect back to after OAuth, for example http://localhost:8080.' }),
     (0, common_1.Get)('auth/github-oauth/redirect'),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Query)('frontendUrl')),
@@ -822,6 +851,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "githubOAuthRedirect", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Start GitHub OAuth account update', description: 'Auth required. Builds a GitHub OAuth authorization URL and encodes current userId in state to link/update GitHub data for the logged-in user.' }),
+    (0, swagger_1.ApiQuery)({ name: 'frontendUrl', required: false, description: 'Frontend origin to redirect back to after OAuth.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('auth/github-oauth/redirect-update'),
     __param(0, (0, common_1.Req)()),
@@ -831,6 +862,9 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "githubOAuthRedirectUpdate", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'GitHub OAuth backend callback', description: 'Callback URL registered with GitHub. Exchanges code in git/github_oauth_callback, obtains app token info, then redirects to frontend /auth/github/callback.' }),
+    (0, swagger_1.ApiQuery)({ name: 'code', required: true, description: 'OAuth authorization code returned by GitHub.' }),
+    (0, swagger_1.ApiQuery)({ name: 'state', required: false, description: 'Base64url encoded state generated by redirect endpoint.' }),
     (0, common_1.Get)('auth/github-oauth/callback'),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
@@ -841,6 +875,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "githubOAuthCallback", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Start Google OAuth login', description: 'Builds Google OAuth URL. For Vercel frontend, redirect_uri points to the frontend proxy /api/v1/auth/google-oauth/callback; local flow uses GOOGLE_CALLBACK_URL.' }),
+    (0, swagger_1.ApiQuery)({ name: 'frontendUrl', required: false, description: 'Frontend origin to redirect back to after OAuth, for example http://localhost:8080 or the Vercel app URL.' }),
     (0, common_1.Get)('auth/google-oauth/redirect'),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Query)('frontendUrl')),
@@ -849,6 +885,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "googleOAuthRedirect", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Start Google OAuth account update', description: 'Auth required. Builds Google OAuth URL and encodes current userId plus callback URL in state.' }),
+    (0, swagger_1.ApiQuery)({ name: 'frontendUrl', required: false, description: 'Frontend origin to redirect back to after OAuth.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('auth/google-oauth/redirect-update'),
     __param(0, (0, common_1.Req)()),
@@ -858,6 +896,9 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "googleOAuthRedirectUpdate", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Google OAuth backend callback', description: 'Callback URL registered with Google. Exchanges code in git/google_oauth_callback using the same redirect_uri stored in state, then redirects to frontend /auth/google/callback with tokens.' }),
+    (0, swagger_1.ApiQuery)({ name: 'code', required: true, description: 'OAuth authorization code returned by Google.' }),
+    (0, swagger_1.ApiQuery)({ name: 'state', required: false, description: 'Base64url encoded state containing next frontend URL, optional userId and googleCallbackUrl.' }),
     (0, common_1.Get)('auth/google-oauth/callback'),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
@@ -868,6 +909,18 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "googleOAuthCallback", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Login with email/password', description: 'Calls auth/login. Returns access and refresh tokens when credentials are valid.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['email', 'password'],
+            properties: {
+                email: { type: 'string', example: 'user@example.com' },
+                password: { type: 'string', example: 'secret123' },
+                otp: { type: 'string', nullable: true, description: 'Optional OTP code when two-factor flow requires it.' },
+            },
+        },
+    }),
     (0, common_1.Post)('auth/login'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -875,6 +928,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "login", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Request password reset', description: 'Calls auth/reset_password and sends frontendUrl from request origin so reset links return to the correct frontend.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['email'],
+            properties: {
+                email: { type: 'string', example: 'user@example.com' },
+            },
+        },
+    }),
     (0, common_1.Post)('auth/reset-password'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Req)()),
@@ -883,6 +946,19 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "resetPassword", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Register a new account', description: 'Calls auth/register and includes frontendUrl from request origin for email confirmation links.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['email', 'password'],
+            properties: {
+                email: { type: 'string', example: 'user@example.com' },
+                password: { type: 'string', example: 'secret123' },
+                username: { type: 'string', example: 'natteam' },
+                fullName: { type: 'string', example: 'Nat Team' },
+            },
+        },
+    }),
     (0, common_1.Post)('auth/register'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Req)()),
@@ -891,6 +967,18 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "register", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Update current user profile', description: 'Auth required. Calls auth/update_profile with JWT user plus request body fields.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            properties: {
+                username: { type: 'string' },
+                fullName: { type: 'string' },
+                avatar: { type: 'string' },
+                github_installation_id: { type: 'string' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('auth/update-profile'),
     __param(0, (0, common_1.Body)()),
@@ -900,6 +988,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "update_profile", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get current user profile', description: 'Auth required. Calls auth/get_profile using current JWT user id.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('auth/get-profile'),
     __param(0, (0, common_1.Req)()),
@@ -908,6 +997,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "get_profile", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Update password', description: 'Auth required. Calls auth/update_password for the current JWT user.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['oldPassword', 'newPassword'],
+            properties: {
+                oldPassword: { type: 'string' },
+                newPassword: { type: 'string' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('auth/update-password'),
     __param(0, (0, common_1.Body)()),
@@ -917,6 +1017,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "update_password", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Refresh access token', description: 'Calls auth/refresh with a refresh token.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['refreshToken'],
+            properties: {
+                refreshToken: { type: 'string' },
+            },
+        },
+    }),
     (0, common_1.Post)('auth/refresh-token'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -924,6 +1034,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "refresh", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Confirm email', description: 'Calls auth/confirm_email with token from email confirmation link.' }),
+    (0, swagger_1.ApiQuery)({ name: 'token', required: true, description: 'Email confirmation token.' }),
     (0, common_1.Get)('auth/confirm-email'),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
@@ -931,6 +1043,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "confirmEmail", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Join channel', description: 'Auth required. Calls chat/joinChannel with current JWT user and channel data.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['channelId'],
+            properties: {
+                channelId: { type: 'string', description: 'Channel id to join.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/join-channel'),
     __param(0, (0, common_1.Body)()),
@@ -940,6 +1062,18 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "joinChannel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Create channel', description: 'Auth required. Calls chat/createChannel. Supports personal/group channels based on type and userIds.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['userIds'],
+            properties: {
+                name: { type: 'string', description: 'Channel name for group channels.' },
+                type: { type: 'string', enum: ['personal', 'group'], example: 'group' },
+                userIds: { type: 'array', items: { type: 'string' }, description: 'Member ids to add; current user is injected from JWT.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/create-channel'),
     __param(0, (0, common_1.Body)()),
@@ -949,6 +1083,19 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "createChannel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Update channel', description: 'Auth required. Calls chat/updateChannel. Used by socket and HTTP flows for channel metadata/member changes.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['channelId'],
+            properties: {
+                channelId: { type: 'string' },
+                name: { type: 'string' },
+                addUserIds: { type: 'array', items: { type: 'string' } },
+                removeUserIds: { type: 'array', items: { type: 'string' } },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/update-channel'),
     __param(0, (0, common_1.Body)()),
@@ -958,6 +1105,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "updateChannel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get registered unread channels', description: 'Auth required. Reads socket unread registration data from Redis for the current user.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('channels/unread-map'),
     __param(0, (0, common_1.Req)()),
@@ -966,6 +1114,19 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getUnreadMap", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Search messages by keyword inside channels', description: 'Auth required. Calls chat/searchMessagesByKeyword with current JWT user and request body filters.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['keyword'],
+            properties: {
+                keyword: { type: 'string', example: 'bug' },
+                channelId: { type: 'string' },
+                limit: { type: 'number', example: 20 },
+                cursor: { type: 'string' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/search-keyword-messages'),
     __param(0, (0, common_1.Body)()),
@@ -975,6 +1136,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "searchKeywordMessages", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Add repositories to channel', description: 'Auth required. Calls chat/addRepositoriesToChannel.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['channelId', 'repositories'],
+            properties: {
+                channelId: { type: 'string' },
+                repositories: { type: 'array', items: { type: 'object' }, description: 'Repository records or ids selected by the client.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/add-repositories'),
     __param(0, (0, common_1.Body)()),
@@ -984,6 +1156,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "addRepositoriesToChannel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Remove repositories from channel', description: 'Auth required. Calls chat/removeRepositoriesFromChannel.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['channelId'],
+            properties: {
+                channelId: { type: 'string' },
+                repositoryIds: { type: 'array', items: { type: 'string' } },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/remove-repositories'),
     __param(0, (0, common_1.Body)()),
@@ -993,6 +1176,10 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "removeRepositoriesFromChannel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'List channels for current user', description: 'Auth required. Calls chat/listChannels. Query filters are forwarded to chat service.' }),
+    (0, swagger_1.ApiQuery)({ name: 'q', required: false, description: 'Optional search/filter text.', schema: { type: 'string' } }),
+    (0, swagger_1.ApiQuery)({ name: 'type', required: false, description: 'Optional channel type filter.', schema: { type: 'string' } }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, description: 'Optional page size.', schema: { type: 'number' } }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('channels/list-channels'),
     __param(0, (0, common_1.Query)()),
@@ -1002,6 +1189,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "listChannels", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'List online users', description: 'Auth required. Reads all online users tracked by gateway socket Redis presence.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('users/list-online'),
     __metadata("design:type", Function),
@@ -1009,6 +1197,12 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "listOnlineUser", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'List messages in channel', description: 'Auth required. Calls chat/listChannelsMessages. Supports cursor pagination and search anchor options.' }),
+    (0, swagger_1.ApiParam)({ name: 'channel_id', description: 'Channel id.' }),
+    (0, swagger_1.ApiQuery)({ name: 'before', required: false, description: 'Message id cursor for older messages.', schema: { type: 'string' } }),
+    (0, swagger_1.ApiQuery)({ name: 'after', required: false, description: 'Message id cursor for newer messages.', schema: { type: 'string' } }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, description: 'Page size.', schema: { type: 'number' } }),
+    (0, swagger_1.ApiQuery)({ name: 'messageId', required: false, description: 'Anchor message id for search mode.', schema: { type: 'string' } }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('channels/list-messages/:channel_id'),
     __param(0, (0, common_1.Param)('channel_id')),
@@ -1019,6 +1213,10 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "listMessages", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Search chat entities', description: 'Auth required. Calls chat/searchChatEntities. Searches channels/messages by key and type.' }),
+    (0, swagger_1.ApiQuery)({ name: 'key', required: true, description: 'Search keyword.' }),
+    (0, swagger_1.ApiQuery)({ name: 'type', required: false, description: 'Entity type filter.', schema: { type: 'string' } }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, description: 'Maximum result count.', schema: { type: 'number', default: 5 } }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('channels/search-chat'),
     __param(0, (0, common_1.Query)()),
@@ -1028,6 +1226,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "SearchChat", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'List channels by repository', description: 'Auth required. Calls chat/listChannelsByRepository.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['repositoryId'],
+            properties: {
+                repositoryId: { type: 'string' },
+                repositoryUrl: { type: 'string' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/repository-channels'),
     __param(0, (0, common_1.Body)()),
@@ -1037,6 +1246,9 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "listChannelsByRepository", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Search users', description: 'Auth required. Calls auth/searchUsers with key and limit.' }),
+    (0, swagger_1.ApiQuery)({ name: 'key', required: true, description: 'Username/email/name search text.' }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, description: 'Maximum result count.', schema: { type: 'number', default: 5 } }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('users/search-user'),
     __param(0, (0, common_1.Query)()),
@@ -1046,6 +1258,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "SearchUsers", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Add members to channel', description: 'Auth required. Calls chat/addMembersToChannel.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['channelId', 'userIds'],
+            properties: {
+                channelId: { type: 'string' },
+                userIds: { type: 'array', items: { type: 'string' } },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/add-members'),
     __param(0, (0, common_1.Body)()),
@@ -1055,6 +1278,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "addMembersToChannel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Remove members from channel', description: 'Auth required. Calls chat/removeMembersFromChannel.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['channelId', 'userIds'],
+            properties: {
+                channelId: { type: 'string' },
+                userIds: { type: 'array', items: { type: 'string' } },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('channels/remove-members'),
     __param(0, (0, common_1.Body)()),
@@ -1064,6 +1298,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "removeMembersFromChannel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'List users not in channel', description: 'Auth required. Calls chat/listNonMembers for add-member UI.' }),
+    (0, swagger_1.ApiParam)({ name: 'channelId', description: 'Channel id.' }),
+    (0, swagger_1.ApiQuery)({ name: 'username', required: false, description: 'Search text for username/email/name.' }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, description: 'Page size.', schema: { type: 'number' } }),
+    (0, swagger_1.ApiQuery)({ name: 'cursor', required: false, description: 'Pagination cursor.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('channels/:channelId/list-non-members'),
     __param(0, (0, common_1.Param)('channelId')),
@@ -1075,6 +1314,14 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "listNonMembers", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Search messages globally or by channel', description: 'Auth required. Calls chat/searchMessages. Supports sender/date/channel filters and cursor pagination.' }),
+    (0, swagger_1.ApiQuery)({ name: 'query', required: true, description: 'Text search query.' }),
+    (0, swagger_1.ApiQuery)({ name: 'channelId', required: false, description: 'Filter by channel id.', schema: { type: 'number' } }),
+    (0, swagger_1.ApiQuery)({ name: 'senderId', required: false, description: 'Filter by sender user id.', schema: { type: 'number' } }),
+    (0, swagger_1.ApiQuery)({ name: 'startDate', required: false, description: 'ISO date lower bound.' }),
+    (0, swagger_1.ApiQuery)({ name: 'endDate', required: false, description: 'ISO date upper bound.' }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, description: 'Page size.', schema: { type: 'number' } }),
+    (0, swagger_1.ApiQuery)({ name: 'cursor', required: false, description: 'Message id cursor.', schema: { type: 'number' } }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('messages/search'),
     __param(0, (0, common_1.Query)('query')),
@@ -1090,6 +1337,19 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "searchMessages", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Create file presigned upload URL', description: 'Auth required. Calls upload/getPresignedUrl. Used before sending file-upload messages.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['filename', 'contentType'],
+            properties: {
+                filename: { type: 'string', example: 'report.pdf' },
+                contentType: { type: 'string', example: 'application/pdf' },
+                size: { type: 'number', description: 'Optional file size in bytes.' },
+                channelId: { type: 'string', description: 'Optional channel id for validation/context.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('upload/get-presigned-url'),
     __param(0, (0, common_1.Body)()),
@@ -1099,6 +1359,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getPresignedUrl", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get object public/read URL', description: 'Auth required. Calls upload/getObject.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['key'],
+            properties: {
+                key: { type: 'string', description: 'Object storage key.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('upload/get-object-url'),
     __param(0, (0, common_1.Body)()),
@@ -1108,6 +1378,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getObjectUrl", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Create avatar presigned upload URL', description: 'Auth required. Calls upload/getAvatarPresignedUrl for the current JWT user.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['filename', 'contentType'],
+            properties: {
+                filename: { type: 'string', example: 'avatar.png' },
+                contentType: { type: 'string', example: 'image/png' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('upload/get-avatar-presigned-url'),
     __param(0, (0, common_1.Body)()),
@@ -1117,6 +1398,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getAvatarPresignedUrl", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get spreadsheet export URL', description: 'Auth required. Calls upload/getSheetUrl for a channel.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['channelId'],
+            properties: {
+                channelId: { type: 'string' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('upload/get-sheet-url'),
     __param(0, (0, common_1.Body)()),
@@ -1126,6 +1417,15 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getSheetUrl", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'List channel attachments', description: 'Auth required. Calls upload/getAttachmentsByChannel with pagination and file filters.' }),
+    (0, swagger_1.ApiParam)({ name: 'channelId', description: 'Channel id.' }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, description: 'Page size.', schema: { type: 'number' } }),
+    (0, swagger_1.ApiQuery)({ name: 'cursor', required: false, description: 'Attachment cursor.', schema: { type: 'number' } }),
+    (0, swagger_1.ApiQuery)({ name: 'filename', required: false, description: 'Filter by filename.' }),
+    (0, swagger_1.ApiQuery)({ name: 'mimeType', required: false, description: 'Filter by MIME type.' }),
+    (0, swagger_1.ApiQuery)({ name: 'senderId', required: false, description: 'Filter by sender user id.' }),
+    (0, swagger_1.ApiQuery)({ name: 'startDate', required: false, description: 'ISO date lower bound.' }),
+    (0, swagger_1.ApiQuery)({ name: 'endDate', required: false, description: 'ISO date upper bound.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('channels/:channelId/attachments'),
     __param(0, (0, common_1.Param)('channelId')),
@@ -1142,6 +1442,18 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getAttachmentsByChannel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get repositories from GitHub installation', description: 'Auth required. Calls git/get_repo_installation and caches by current user plus body for 60 seconds.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            properties: {
+                installationId: { type: 'string', description: 'Optional GitHub installation id.' },
+                page: { type: 'number' },
+                per_page: { type: 'number' },
+                search: { type: 'string' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('git/get_repo_installation'),
     __param(0, (0, common_1.Body)()),
@@ -1151,6 +1463,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "get_repo_installation", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get repository data by URL', description: 'Auth required. Calls git/get_repo_data_by_url and caches result by user and URL for 3 minutes.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['url'],
+            properties: {
+                url: { type: 'string', example: 'https://github.com/owner/repo' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('git/get_repo_data_by_url'),
     __param(0, (0, common_1.Body)()),
@@ -1160,6 +1482,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "get_repo_data_by_url", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get repository data for a channel', description: 'Auth required. First calls chat/listRepositoriesByChannel, then git/get_repo_by_ids for repository details. Uses snapshot cache to avoid repeated Git calls.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['channelId'],
+            properties: {
+                channelId: { type: 'string' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('git/get_list_repo_data_by_channel'),
     __param(0, (0, common_1.Body)()),
@@ -1169,6 +1501,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "get_list_repo_data_by_channel", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'List notifications', description: 'Auth required. Calls notification/get_notifications for current JWT user.' }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, description: 'Page size.', schema: { type: 'number' } }),
+    (0, swagger_1.ApiQuery)({ name: 'cursor', required: false, description: 'Pagination cursor.' }),
+    (0, swagger_1.ApiQuery)({ name: 'type', required: false, description: 'Notification type filter.', schema: { type: 'string' } }),
+    (0, swagger_1.ApiQuery)({ name: 'isRead', required: false, description: 'Read-state filter.', schema: { type: 'boolean' } }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('notifications'),
     __param(0, (0, common_1.Query)()),
@@ -1178,6 +1515,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "getNotifications", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Mark notification as read', description: 'Auth required. Calls notification/mark_as_read.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['id'],
+            properties: {
+                id: { type: 'string', description: 'Notification id.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('notifications/mark-as-read'),
     __param(0, (0, common_1.Body)()),
@@ -1187,6 +1534,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "markAsRead", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Mark all notifications as read', description: 'Auth required. Calls notification/mark_all_as_read for current JWT user.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('notifications/mark-all-as-read'),
     __param(0, (0, common_1.Req)()),
@@ -1195,6 +1543,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "markAllAsRead", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Count unread notifications', description: 'Auth required. Calls notification/get_number_unread_notifications for current JWT user.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('notifications/count-unread'),
     __param(0, (0, common_1.Req)()),
@@ -1203,6 +1552,18 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "countUnreadNotifications", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Admin user management', description: 'Auth required. Calls auth/admin_user_management. Body must include the management action expected by AuthService.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['action'],
+            properties: {
+                action: { type: 'string', description: 'Admin action, for example list, update, delete, lock or unlock.' },
+                userId: { type: 'string', description: 'Target user id for single-user actions.' },
+                data: { type: 'object', description: 'Action-specific payload.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('admin/users'),
     __param(0, (0, common_1.Body)()),
@@ -1212,6 +1573,18 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "adminUserManagement", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Admin channel management', description: 'Auth required. Calls chat/admin_channel_management. Body must include the management action expected by ChatService.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['action'],
+            properties: {
+                action: { type: 'string', description: 'Admin action, for example list, update, delete or stats.' },
+                channelId: { type: 'string', description: 'Target channel id for single-channel actions.' },
+                data: { type: 'object', description: 'Action-specific payload.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('admin/channels'),
     __param(0, (0, common_1.Body)()),
@@ -1221,6 +1594,18 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "adminChannelManagement", null);
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Admin file management', description: 'Auth required. Calls upload/admin_file_management. Body must include the management action expected by UploadService.' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['action'],
+            properties: {
+                action: { type: 'string', description: 'Admin action, for example list, unlink, delete or stats.' },
+                fileId: { type: 'string', description: 'Target file/attachment id for single-file actions.' },
+                data: { type: 'object', description: 'Action-specific payload.' },
+            },
+        },
+    }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('admin/files'),
     __param(0, (0, common_1.Body)()),
@@ -1230,6 +1615,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "adminFileManagement", null);
 exports.GatewayController = GatewayController = __decorate([
+    (0, swagger_1.ApiTags)('Gateway API'),
+    (0, swagger_1.ApiBearerAuth)('access-token'),
     (0, common_1.Controller)('api'),
     __param(3, (0, common_1.Inject)(cache_manager_1.CACHE_MANAGER)),
     __metadata("design:paramtypes", [gateway_service_1.GatewayService,

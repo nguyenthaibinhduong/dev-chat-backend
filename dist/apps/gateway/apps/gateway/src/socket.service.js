@@ -322,10 +322,10 @@ let ChatSocketService = class ChatSocketService {
         }
     }
     async sendMessageToChannel(message) {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
-        const tempId = Date.now();
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        const tempId = (_a = message.fakeID) !== null && _a !== void 0 ? _a : Date.now();
         const now = new Date().toISOString();
-        const typeMsg = (_a = message.type) !== null && _a !== void 0 ? _a : 'message';
+        const typeMsg = (_b = message.type) !== null && _b !== void 0 ? _b : 'message';
         const pendingMsg = {
             id: message.isUpdate ? message.id : tempId,
             channelId: message.channelId,
@@ -334,7 +334,7 @@ let ChatSocketService = class ChatSocketService {
             type: typeMsg,
             created_at: now,
             updated_at: null,
-            isPin: (_b = message.isPin) !== null && _b !== void 0 ? _b : false,
+            isPin: (_c = message.isPin) !== null && _c !== void 0 ? _c : false,
             json_data: message.json_data ? { ...message.json_data } : null,
             replyTo: message.replyTo ? { ...message.replyTo } : null,
             like_data: message.like_data ? { ...message.like_data } : null,
@@ -344,7 +344,7 @@ let ChatSocketService = class ChatSocketService {
                 email: message.user.email,
             },
             isMine: true,
-            isUpdate: (_c = message.isUpdate) !== null && _c !== void 0 ? _c : false,
+            isUpdate: (_d = message.isUpdate) !== null && _d !== void 0 ? _d : false,
             status: 'pending',
         };
         if (this.server) {
@@ -356,14 +356,14 @@ let ChatSocketService = class ChatSocketService {
         }
         if (message.channelData && message.channelData.isChannelActive === false) {
             const activeChannel = { ...message.channelData, isChannelActive: true };
-            console.log(`🔔 [GỬI TIN NHẮN] Channel chưa active, chuẩn bị kích hoạt và gửi đến ${((_d = message.channelData.members) === null || _d === void 0 ? void 0 : _d.length) || 0} thành viên`);
+            console.log(`🔔 [GỬI TIN NHẮN] Channel chưa active, chuẩn bị kích hoạt và gửi đến ${((_e = message.channelData.members) === null || _e === void 0 ? void 0 : _e.length) || 0} thành viên`);
             let sentCount = 0;
             for (const member of message.channelData.members || []) {
                 const sent = await this.emitToUserWithLog(member.id, 'receiveChannel', activeChannel, 'KÍCH HOẠT KÊNH');
                 if (sent)
                     sentCount++;
             }
-            console.log(`📊 [GỬI TIN NHẮN] Đã gửi active channel đến ${sentCount}/${((_e = message.channelData.members) === null || _e === void 0 ? void 0 : _e.length) || 0} thành viên`);
+            console.log(`📊 [GỬI TIN NHẮN] Đã gửi active channel đến ${sentCount}/${((_f = message.channelData.members) === null || _f === void 0 ? void 0 : _f.length) || 0} thành viên`);
         }
         try {
             const res = await this.gw.exec('chat', 'sendMessage', {
@@ -376,10 +376,10 @@ let ChatSocketService = class ChatSocketService {
                 channelId: message.channelId,
                 type: datas.type || typeMsg,
                 fakeID: tempId,
-                isPin: (_f = pendingMsg.isPin) !== null && _f !== void 0 ? _f : false,
-                isUpdate: (_g = message.isUpdate) !== null && _g !== void 0 ? _g : false,
-                id: message.isUpdate ? message.id : null,
-                status: pendingMsg.isUpdated ? (typeMsg === 'remove' ? 'remove' : 'updated') : 'sent',
+                isPin: (_g = pendingMsg.isPin) !== null && _g !== void 0 ? _g : false,
+                isUpdate: (_h = message.isUpdate) !== null && _h !== void 0 ? _h : false,
+                id: message.isUpdate ? message.id : datas.id,
+                status: message.isUpdate ? (typeMsg === 'remove' ? 'remove' : 'updated') : 'sent',
             };
             this.server.to(message.channelId).emit('receiveMessage', finalMessage);
             console.log(`✅ [GỬI TIN NHẮN] Đã emit final message vào room ${message.channelId}`);
@@ -388,7 +388,7 @@ let ChatSocketService = class ChatSocketService {
                     data: res.data,
                     type: 'message',
                 });
-                if ((_h = notifResult === null || notifResult === void 0 ? void 0 : notifResult.data) === null || _h === void 0 ? void 0 : _h.notifications) {
+                if ((_j = notifResult === null || notifResult === void 0 ? void 0 : notifResult.data) === null || _j === void 0 ? void 0 : _j.notifications) {
                     await this.sendNotificationsToUsers(notifResult.data.notifications, 'THÔNG BÁO TIN NHẮN');
                 }
                 else {

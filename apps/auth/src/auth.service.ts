@@ -86,6 +86,16 @@ export class AuthService {
     }
   }
 
+  private normalizeFrontendUrl(frontendUrl?: string): string {
+    if (!frontendUrl) {
+      throw new RpcException({
+        msg: 'Missing frontend origin header',
+        status: 400,
+      });
+    }
+    return frontendUrl.replace(/\/+$/, '');
+  }
+
 
 
   
@@ -112,9 +122,12 @@ export class AuthService {
     }));
   }
 
-  async register(registerDto: RegisterDto): Promise<any> {
+  async register(registerDto: RegisterDto, frontendUrl?: string): Promise<any> {
+    const frontendBaseUrl = this.normalizeFrontendUrl(frontendUrl);
+    const { frontendUrl: _ignoredFrontendUrl, ...userData } =
+      registerDto as RegisterDto & { frontendUrl?: string };
     const existingUser = await this.userRepository.findByEmail(
-      registerDto.email,
+      userData.email,
     );
     if (existingUser) {
       if (existingUser.provider === 'github' || existingUser.provider === 'google') {
@@ -126,10 +139,10 @@ export class AuthService {
       throw new RpcException({ msg: 'Email đã tồn tại', status: 409 });
     }
 
-    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+    const hashedPassword = await bcrypt.hash(userData.password, 10);
 
     const user: any = await this.userRepository.create({
-      ...registerDto,
+      ...userData,
       password: hashedPassword,
     });
 
@@ -140,7 +153,7 @@ export class AuthService {
     await this.userRepository.save(user);
 
     //send verification email
-    this.sendVerificationEmail(user.email);
+    await this.sendVerificationEmail(user.email, frontendBaseUrl);
 
     // Mã hóa sub trước khi tạo JWT
     const payload: any = {
@@ -176,7 +189,8 @@ export class AuthService {
     return;
   }
 
-  async sendVerificationEmail(email: string): Promise<any> {
+  async sendVerificationEmail(email: string, frontendUrl?: string): Promise<any> {
+    const frontendBaseUrl = this.normalizeFrontendUrl(frontendUrl);
     const user: any = await this.userRepository.findByEmail(email);
     if (!user)
       throw new RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
@@ -187,7 +201,7 @@ export class AuthService {
     user.verification_token = verificationToken;
     await this.userRepository.save(user);
 
-    const frontendConfirmUrl = `${process.env.FE_URL}/auth/confirm-email?token=${verificationToken}&email=${user.email}`;
+    const frontendConfirmUrl = `${frontendBaseUrl}/auth/confirm-email?token=${verificationToken}&email=${user.email}`;
     await this.mailerService.sendMail({
       to: user.email,
       subject: 'Xác nhận email của bạn',
@@ -1009,7 +1023,8 @@ export class AuthService {
    */
   async resetPassword(
     email: string, 
-    otp?: string
+    otp?: string,
+    frontendUrl?: string,
   ): Promise<any> {
     try {
       // ============ BƯỚC 1: GỬI OTP ============
@@ -1183,6 +1198,7 @@ export class AuthService {
       console.log('✅ [RESET PASSWORD - STEP 2] OTP hợp lệ');
 
       // 2.8. Tạo mật khẩu ngẫu nhiên (12 ký tự)
+      const loginUrl = `${this.normalizeFrontendUrl(frontendUrl)}/auth/login`;
       const newPassword = this.generateRandomPassword(12);
       console.log(`🔑 [RESET PASSWORD - STEP 2] Đã tạo mật khẩu mới cho user: ${user.email}`);
 
@@ -1200,7 +1216,6 @@ export class AuthService {
       console.log(`💾 [RESET PASSWORD - STEP 2] Đã cập nhật mật khẩu mới vào database`);
 
       // 2.11. Gửi email chứa mật khẩu mới
-      const loginUrl = `${process.env.FE_URL}/auth/login`;
       const currentDate = new Date().toLocaleDateString('vi-VN', {
         year: 'numeric',
         month: 'long',

@@ -13,7 +13,7 @@ export class AuthController {
       case 'login':
         return this.authService.login(data);
       case 'register':
-        return this.authService.register(data);
+        return this.authService.register(data, data?.frontendUrl);
       case 'verify_token':
         return this.authService.validateToken(data.token);
       case 'refresh':
@@ -45,6 +45,7 @@ export class AuthController {
         return this.authService.resetPassword(
           data.email,
           data.otp,
+          data.frontendUrl,
         );
       case 'admin_user_management':
         return this.authService.CRUD(data.user.id, data, data.method);

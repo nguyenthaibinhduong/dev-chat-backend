@@ -14,6 +14,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UserRepository } from './repositories/user.repository';
 import { GithubStrategy } from './strategies/github.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -61,6 +62,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     UserRepository,
     JwtStrategy,
     GithubStrategy,
+    GoogleStrategy,
     {
       provide: 'REDIS_CLIENT',
       inject: [ConfigService],

@@ -129,7 +129,19 @@ export class GitService extends BaseService<Message | Channel> {
     return { ok: true, token: data.access_token as string };
   }
 
-  async githubOAuthCallback(req: any, code: string, state?: string) {
+  private normalizeFrontendUrl(frontendUrl?: string): string {
+    if (!frontendUrl) {
+      throw new RpcCustomException('Missing frontend origin header', 400);
+    }
+    return frontendUrl.replace(/\/+$/, '');
+  }
+
+  async githubOAuthCallback(
+    req: any,
+    code: string,
+    state?: string,
+    frontendUrl?: string,
+  ) {
     try {
       if (!code) {
         throw new RpcCustomException('Missing code', 400);
@@ -175,7 +187,7 @@ export class GitService extends BaseService<Message | Channel> {
           (!user.github_installation_id && state) ||
           (state && !user.github_verified)
         ) {
-          const nextUrl = process.env.FE_URL!;
+          const nextUrl = this.normalizeFrontendUrl(frontendUrl);
           const statePayload = { next: nextUrl, userId: user.id };
           const encoded = Buffer.from(
             JSON.stringify(statePayload),
@@ -192,7 +204,7 @@ export class GitService extends BaseService<Message | Channel> {
 
         // (3) Nếu chưa verified + chưa có installationId + không có state → bắt cài app
         if (!user.github_verified && !user.github_installation_id && !state) {
-          const nextUrl = process.env.FE_URL!;
+          const nextUrl = this.normalizeFrontendUrl(frontendUrl);
           const statePayload = { next: nextUrl, userId: user.id };
           const encoded = Buffer.from(
             JSON.stringify(statePayload),
@@ -228,7 +240,7 @@ export class GitService extends BaseService<Message | Channel> {
       });
       await this.userRepo.save(user);
 
-      const nextUrl = state || process.env.FE_URL!;
+      const nextUrl = this.normalizeFrontendUrl(frontendUrl);
       const statePayload = { next: nextUrl, userId: user.id };
       const encoded = Buffer.from(
         JSON.stringify(statePayload),
@@ -247,7 +259,10 @@ export class GitService extends BaseService<Message | Channel> {
       };
 
       return { nextUrl: installUrl, user, isInstall: true };
-    } catch {
+    } catch (error: any) {
+      if (error instanceof RpcCustomException) {
+        throw error;
+      }
       throw new RpcCustomException(
         'Không thể xác thực người dùng GitHub hoặc đã tồn tại tài khoản',
         404,

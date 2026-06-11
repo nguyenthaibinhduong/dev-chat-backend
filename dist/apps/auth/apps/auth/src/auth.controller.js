@@ -26,7 +26,7 @@ let AuthController = class AuthController {
             case 'login':
                 return this.authService.login(data);
             case 'register':
-                return this.authService.register(data);
+                return this.authService.register(data, data === null || data === void 0 ? void 0 : data.frontendUrl);
             case 'verify_token':
                 return this.authService.validateToken(data.token);
             case 'refresh':
@@ -47,7 +47,7 @@ let AuthController = class AuthController {
             case 'update_password':
                 return this.authService.updatePassword(data.user.id, data.oldPassword, data.newPassword);
             case 'reset_password':
-                return this.authService.resetPassword(data.email, data.captchaToken, data.otp);
+                return this.authService.resetPassword(data.email, data.otp, data.frontendUrl);
             case 'admin_user_management':
                 return this.authService.CRUD(data.user.id, data, data.method);
             default:

@@ -60,7 +60,6 @@ const typeorm_2 = require("typeorm");
 const mailer_1 = require("@nestjs-modules/mailer");
 const crypto = __importStar(require("crypto"));
 const ioredis_1 = __importDefault(require("ioredis"));
-const axios_1 = __importDefault(require("axios"));
 let AuthService = class AuthService {
     constructor(userRepo, userRepository, jwtService, mailerService, redis) {
         this.userRepo = userRepo;
@@ -69,79 +68,8 @@ let AuthService = class AuthService {
         this.mailerService = mailerService;
         this.redis = redis;
         this.algorithm = 'aes-256-cbc';
-        this.recaptchaSecret = process.env.RECAPTCHA_SECRET;
         const key = process.env.ID_ENCRYPTION_KEY || 'default-secret-key-32-chars-min';
         this.encryptionKey = crypto.scryptSync(key, 'salt', 32);
-    }
-    async verifyCaptcha(token) {
-        if (!token || token.trim() === '') {
-            console.log('❌ [CAPTCHA] Token rỗng');
-            throw new microservices_1.RpcException({
-                msg: 'Vui lòng xác thực CAPTCHA',
-                status: 400,
-            });
-        }
-        if (!this.recaptchaSecret) {
-            console.error('❌ [CAPTCHA] RECAPTCHA_SECRET chưa được cấu hình');
-            throw new microservices_1.RpcException({
-                msg: 'Cấu hình CAPTCHA không hợp lệ',
-                status: 500,
-            });
-        }
-        try {
-            console.log(`🔍 [CAPTCHA] Đang xác thực token: ${token.substring(0, 20)}...`);
-            const response = await axios_1.default.post('https://www.google.com/recaptcha/api/siteverify', new URLSearchParams({
-                secret: this.recaptchaSecret,
-                response: token,
-            }), {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                timeout: 10000,
-            });
-            const { success, score, action, 'error-codes': errorCodes } = response.data;
-            console.log(`📊 [CAPTCHA] Kết quả:`, {
-                success,
-                score,
-                action,
-                errorCodes,
-            });
-            if (!success) {
-                console.warn(`❌ [CAPTCHA] Xác thực thất bại:`, errorCodes);
-                throw new microservices_1.RpcException({
-                    msg: 'CAPTCHA không hợp lệ hoặc đã hết hạn',
-                    status: 400,
-                });
-            }
-            if (score !== undefined && score < 0.5) {
-                console.warn(`⚠️ [CAPTCHA] Score thấp: ${score}`);
-                throw new microservices_1.RpcException({
-                    msg: 'Xác thực CAPTCHA không đạt yêu cầu bảo mật',
-                    status: 403,
-                });
-            }
-            console.log(`✅ [CAPTCHA] Xác thực thành công - Score: ${score || 'N/A'}`);
-            return true;
-        }
-        catch (error) {
-            if (error instanceof microservices_1.RpcException) {
-                throw error;
-            }
-            console.error(`❌ [CAPTCHA] Lỗi:`, {
-                message: error === null || error === void 0 ? void 0 : error.message,
-                code: error === null || error === void 0 ? void 0 : error.code,
-            });
-            if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-                throw new microservices_1.RpcException({
-                    msg: 'Không thể kết nối đến dịch vụ CAPTCHA',
-                    status: 504,
-                });
-            }
-            throw new microservices_1.RpcException({
-                msg: 'Lỗi xác thực CAPTCHA',
-                status: 500,
-            });
-        }
     }
     encryptId(id) {
         try {
@@ -184,6 +112,15 @@ let AuthService = class AuthService {
             throw new microservices_1.RpcException({ status: 400, msg: 'ID không hợp lệ hoặc đã bị thay đổi' });
         }
     }
+    normalizeFrontendUrl(frontendUrl) {
+        if (!frontendUrl) {
+            throw new microservices_1.RpcException({
+                msg: 'Missing frontend origin header',
+                status: 400,
+            });
+        }
+        return frontendUrl.replace(/\/+$/, '');
+    }
     async searchUsers(user, params) {
         var _a;
         const key = (params.key || '').trim();
@@ -203,27 +140,29 @@ let AuthService = class AuthService {
             username: u.username,
         }));
     }
-    async register(registerDto) {
-        const existingUser = await this.userRepository.findByEmail(registerDto.email);
+    async register(registerDto, frontendUrl) {
+        const frontendBaseUrl = this.normalizeFrontendUrl(frontendUrl);
+        const { frontendUrl: _ignoredFrontendUrl, ...userData } = registerDto;
+        const existingUser = await this.userRepository.findByEmail(userData.email);
         if (existingUser) {
-            if (existingUser.provider === 'github') {
+            if (existingUser.provider === 'github' || existingUser.provider === 'google') {
                 throw new microservices_1.RpcException({
-                    msg: 'Tài khoản đã tồn tại dưới dạng đăng nhập bằng GitHub. Vui lòng đăng nhập bằng GitHub hoặc dùng chức năng "Thiết lập mật khẩu" để liên kết.',
+                    msg: `Tài khoản đã tồn tại dưới dạng đăng nhập bằng ${existingUser.provider}. Vui lòng đăng nhập bằng ${existingUser.provider}.`,
                     status: 409,
                 });
             }
             throw new microservices_1.RpcException({ msg: 'Email đã tồn tại', status: 409 });
         }
-        const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+        const hashedPassword = await bcrypt.hash(userData.password, 10);
         const user = await this.userRepository.create({
-            ...registerDto,
+            ...userData,
             password: hashedPassword,
         });
         const verificationToken = crypto.randomBytes(32).toString('hex');
         user.verification_token = verificationToken;
         user.email_verified = false;
         await this.userRepository.save(user);
-        this.sendVerificationEmail(user.email);
+        await this.sendVerificationEmail(user.email, frontendBaseUrl);
         const payload = {
             sub: this.encryptId(user.id),
             email: user.email,
@@ -254,7 +193,8 @@ let AuthService = class AuthService {
         await this.userRepository.save(user);
         return;
     }
-    async sendVerificationEmail(email) {
+    async sendVerificationEmail(email, frontendUrl) {
+        const frontendBaseUrl = this.normalizeFrontendUrl(frontendUrl);
         const user = await this.userRepository.findByEmail(email);
         if (!user)
             throw new microservices_1.RpcException({ msg: 'Không tìm thấy người dùng', status: 404 });
@@ -263,7 +203,7 @@ let AuthService = class AuthService {
         const verificationToken = crypto.randomBytes(32).toString('hex');
         user.verification_token = verificationToken;
         await this.userRepository.save(user);
-        const frontendConfirmUrl = `${process.env.FE_URL}/auth/confirm-email?token=${verificationToken}&email=${user.email}`;
+        const frontendConfirmUrl = `${frontendBaseUrl}/auth/confirm-email?token=${verificationToken}&email=${user.email}`;
         await this.mailerService.sendMail({
             to: user.email,
             subject: 'Xác nhận email của bạn',
@@ -274,17 +214,6 @@ let AuthService = class AuthService {
     }
     async login(loginDto) {
         try {
-            console.log('🔐 [LOGIN] Bắt đầu xác thực CAPTCHA...');
-            if (loginDto.captchaToken) {
-                await this.verifyCaptcha(loginDto.captchaToken);
-                console.log('✅ [LOGIN] CAPTCHA hợp lệ');
-            }
-            else {
-                throw new microservices_1.RpcException({
-                    msg: 'Vui lòng xác thực CAPTCHA',
-                    status: 401,
-                });
-            }
             console.log(`🔍 [LOGIN] Tìm user với email: ${loginDto.email}`);
             const user = await this.userRepository.findByEmail(loginDto.email);
             if (!user) {
@@ -915,18 +844,10 @@ let AuthService = class AuthService {
     generateOTP() {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
-    async resetPassword(email, captchaToken, otp) {
+    async resetPassword(email, otp, frontendUrl) {
         try {
             if (!otp) {
                 console.log('🔐 [RESET PASSWORD - STEP 1] Gửi OTP');
-                if (!captchaToken) {
-                    throw new microservices_1.RpcException({
-                        msg: 'Vui lòng xác thực CAPTCHA',
-                        status: 400,
-                    });
-                }
-                await this.verifyCaptcha(captchaToken);
-                console.log('✅ [RESET PASSWORD - STEP 1] CAPTCHA hợp lệ');
                 console.log(`🔍 [RESET PASSWORD - STEP 1] Tìm user với email: ${email}`);
                 const user = await this.userRepository.findByEmail(email);
                 if (!user) {
@@ -1053,6 +974,7 @@ let AuthService = class AuthService {
                 });
             }
             console.log('✅ [RESET PASSWORD - STEP 2] OTP hợp lệ');
+            const loginUrl = `${this.normalizeFrontendUrl(frontendUrl)}/auth/login`;
             const newPassword = this.generateRandomPassword(12);
             console.log(`🔑 [RESET PASSWORD - STEP 2] Đã tạo mật khẩu mới cho user: ${user.email}`);
             const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -1063,7 +985,6 @@ let AuthService = class AuthService {
             user.refresh_token = null;
             await this.userRepository.save(user);
             console.log(`💾 [RESET PASSWORD - STEP 2] Đã cập nhật mật khẩu mới vào database`);
-            const loginUrl = `${process.env.FE_URL}/auth/login`;
             const currentDate = new Date().toLocaleDateString('vi-VN', {
                 year: 'numeric',
                 month: 'long',

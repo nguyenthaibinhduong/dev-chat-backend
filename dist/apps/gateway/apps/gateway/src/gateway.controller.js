@@ -35,6 +35,41 @@ function decodeState(raw) {
         return null;
     }
 }
+function firstHeaderValue(value) {
+    if (Array.isArray(value))
+        return value[0];
+    return value;
+}
+function normalizeOrigin(value) {
+    var _a;
+    const headerValue = (_a = value === null || value === void 0 ? void 0 : value.split(',')[0]) === null || _a === void 0 ? void 0 : _a.trim();
+    if (!headerValue)
+        return undefined;
+    try {
+        return new URL(headerValue).origin;
+    }
+    catch {
+        return undefined;
+    }
+}
+function getRequestOrigin(req) {
+    const origin = normalizeOrigin(firstHeaderValue(req.headers.origin));
+    if (origin)
+        return origin;
+    const referer = normalizeOrigin(firstHeaderValue(req.headers.referer));
+    if (referer)
+        return referer;
+    const forwardedHost = firstHeaderValue(req.headers['x-forwarded-host']);
+    if (forwardedHost) {
+        const forwardedProto = firstHeaderValue(req.headers['x-forwarded-proto']) || req.protocol || 'https';
+        return `${forwardedProto.split(',')[0].trim()}://${forwardedHost.split(',')[0].trim()}`;
+    }
+    const host = firstHeaderValue(req.headers.host);
+    return host ? `${req.protocol || 'http'}://${host}` : '';
+}
+function joinFrontendUrl(frontendUrl, path) {
+    return `${frontendUrl.replace(/\/+$/, '')}${path}`;
+}
 function verifySignature(secret, bodyRaw, signature256) {
     const hmac = (0, crypto_1.createHmac)('sha256', secret).update(bodyRaw).digest('hex');
     const expected = Buffer.from(`sha256=${hmac}`, 'utf8');
@@ -61,7 +96,7 @@ let GatewayController = class GatewayController {
     async githubAppRedirect(req) {
         const user = req.user;
         const state = encodeState({
-            next: process.env.FE_URL,
+            next: getRequestOrigin(req),
             userId: user.id,
         });
         const result = await this.gw.exec('git', 'get_install_app_url', {
@@ -75,7 +110,7 @@ let GatewayController = class GatewayController {
             userId: user.id,
         });
     }
-    async setup(installationId, setupAction, state, res) {
+    async setup(installationId, setupAction, state, req, res) {
         const stateDecoded = decodeState(state);
         if (!stateDecoded || !stateDecoded.userId) {
             return res.redirect();
@@ -96,10 +131,11 @@ let GatewayController = class GatewayController {
         if (result && (result === null || result === void 0 ? void 0 : result.data)) {
             const access_token = result.data.access_token;
             const refresh_token = result.data.refresh_token;
-            return res.redirect(`${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`);
+            const frontendUrl = stateDecoded.next || getRequestOrigin(req);
+            return res.redirect(joinFrontendUrl(frontendUrl, `/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`));
         }
         else {
-            return res.redirect(process.env.FE_URL);
+            return res.redirect(stateDecoded.next || getRequestOrigin(req));
         }
     }
     async handle(req, res, sig256, ghEvent, deliveryId) {
@@ -176,10 +212,16 @@ let GatewayController = class GatewayController {
         }, { waitMs: 90000 });
         return result;
     }
-    async githubOAuthRedirect() {
+    async githubOAuthRedirect(req) {
         const clientId = process.env.GITHUB_CLIENT_ID;
         const callbackUrl = process.env.GITHUB_CALLBACK_URL;
-        const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}`;
+        const params = new URLSearchParams({
+            client_id: clientId !== null && clientId !== void 0 ? clientId : '',
+            scope: 'user:email',
+            redirect_uri: callbackUrl !== null && callbackUrl !== void 0 ? callbackUrl : '',
+            state: encodeState({ next: getRequestOrigin(req) }),
+        });
+        const url = `https://github.com/login/oauth/authorize?${params.toString()}`;
         return { url };
     }
     async githubOAuthRedirectUpdate(req) {
@@ -188,11 +230,19 @@ let GatewayController = class GatewayController {
             return { code: 401, msg: 'Unauthorized', data: null };
         const clientId = process.env.GITHUB_CLIENT_ID;
         const callbackUrl = process.env.GITHUB_CALLBACK_URL;
-        const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}&state=${user.id}`;
+        const params = new URLSearchParams({
+            client_id: clientId !== null && clientId !== void 0 ? clientId : '',
+            scope: 'user:email',
+            redirect_uri: callbackUrl !== null && callbackUrl !== void 0 ? callbackUrl : '',
+            state: encodeState({ next: getRequestOrigin(req), userId: user.id }),
+        });
+        const url = `https://github.com/login/oauth/authorize?${params.toString()}`;
         return { url };
     }
     async githubOAuthCallback(req, res, code, state) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e;
+        const stateDecoded = decodeState(state);
+        const frontendUrl = (stateDecoded === null || stateDecoded === void 0 ? void 0 : stateDecoded.next) || getRequestOrigin(req);
         try {
             const safeReq = {
                 session: req.session,
@@ -202,40 +252,103 @@ let GatewayController = class GatewayController {
             const result = await this.gw.exec('git', 'github_oauth_callback', {
                 req: safeReq,
                 code,
-                state: state !== null && state !== void 0 ? state : undefined,
+                state: (_b = (_a = stateDecoded === null || stateDecoded === void 0 ? void 0 : stateDecoded.userId) !== null && _a !== void 0 ? _a : state) !== null && _b !== void 0 ? _b : undefined,
+                frontendUrl,
             });
             if ((result === null || result === void 0 ? void 0 : result.data) && result.data.user) {
                 const isInstall = result.data.isInstall;
                 if (isInstall) {
-                    return res.redirect((_a = result === null || result === void 0 ? void 0 : result.data) === null || _a === void 0 ? void 0 : _a.nextUrl);
+                    return res.redirect((_c = result === null || result === void 0 ? void 0 : result.data) === null || _c === void 0 ? void 0 : _c.nextUrl);
                 }
                 else {
                     const tokenInfo = await this.gw.exec('auth', 'get_token_info', {
-                        userId: (_c = (_b = result === null || result === void 0 ? void 0 : result.data) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.id,
+                        userId: (_e = (_d = result === null || result === void 0 ? void 0 : result.data) === null || _d === void 0 ? void 0 : _d.user) === null || _e === void 0 ? void 0 : _e.id,
                     });
                     if (tokenInfo && (tokenInfo === null || tokenInfo === void 0 ? void 0 : tokenInfo.data)) {
                         const access_token = tokenInfo.data.access_token;
                         const refresh_token = tokenInfo.data.refresh_token;
-                        return res.redirect(`${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`);
+                        return res.redirect(joinFrontendUrl(frontendUrl, `/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`));
                     }
                     else {
-                        return res.redirect(`${process.env.FE_URL}`);
+                        return res.redirect(frontendUrl);
                     }
                 }
             }
         }
         catch {
-            return res.redirect(`${process.env.FE_URL}/error?error=githuboauth`);
+            return res.redirect(joinFrontendUrl(frontendUrl, '/error?error=githuboauth'));
+        }
+    }
+    async googleOAuthRedirect(req) {
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
+        const params = new URLSearchParams({
+            client_id: clientId !== null && clientId !== void 0 ? clientId : '',
+            redirect_uri: callbackUrl !== null && callbackUrl !== void 0 ? callbackUrl : '',
+            response_type: 'code',
+            scope: 'openid email profile',
+            prompt: 'select_account',
+            state: encodeState({ next: getRequestOrigin(req) }),
+        });
+        const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+        return { url };
+    }
+    async googleOAuthRedirectUpdate(req) {
+        const user = req.user;
+        if (!(user === null || user === void 0 ? void 0 : user.id))
+            return { code: 401, msg: 'Unauthorized', data: null };
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
+        const params = new URLSearchParams({
+            client_id: clientId !== null && clientId !== void 0 ? clientId : '',
+            redirect_uri: callbackUrl !== null && callbackUrl !== void 0 ? callbackUrl : '',
+            response_type: 'code',
+            scope: 'openid email profile',
+            prompt: 'select_account',
+            state: encodeState({ next: getRequestOrigin(req), userId: user.id }),
+        });
+        const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+        return { url };
+    }
+    async googleOAuthCallback(req, res, code, state) {
+        var _a, _b;
+        const stateDecoded = decodeState(state);
+        const frontendUrl = (stateDecoded === null || stateDecoded === void 0 ? void 0 : stateDecoded.next) || getRequestOrigin(req);
+        try {
+            const result = await this.gw.exec('git', 'google_oauth_callback', {
+                code,
+                state: (_b = (_a = stateDecoded === null || stateDecoded === void 0 ? void 0 : stateDecoded.userId) !== null && _a !== void 0 ? _a : state) !== null && _b !== void 0 ? _b : undefined,
+            });
+            if ((result === null || result === void 0 ? void 0 : result.data) && result.data.user) {
+                const tokenInfo = await this.gw.exec('auth', 'get_token_info', {
+                    userId: result.data.user.id,
+                });
+                if (tokenInfo === null || tokenInfo === void 0 ? void 0 : tokenInfo.data) {
+                    const access_token = tokenInfo.data.access_token;
+                    const refresh_token = tokenInfo.data.refresh_token;
+                    return res.redirect(joinFrontendUrl(frontendUrl, `/auth/google/callback?access_token=${access_token}&refresh_token=${refresh_token}`));
+                }
+            }
+            return res.redirect(frontendUrl);
+        }
+        catch {
+            return res.redirect(joinFrontendUrl(frontendUrl, '/error?error=googleoauth'));
         }
     }
     async login(dto) {
         return this.gw.exec('auth', 'login', dto);
     }
-    async resetPassword(dto) {
-        return this.gw.exec('auth', 'reset_password', dto);
+    async resetPassword(dto, req) {
+        return this.gw.exec('auth', 'reset_password', {
+            ...dto,
+            frontendUrl: getRequestOrigin(req),
+        });
     }
-    async register(dto) {
-        return this.gw.exec('auth', 'register', dto);
+    async register(dto, req) {
+        return this.gw.exec('auth', 'register', {
+            ...dto,
+            frontendUrl: getRequestOrigin(req),
+        });
     }
     async update_profile(dto, req) {
         const user = req.user;
@@ -547,9 +660,10 @@ __decorate([
     __param(0, (0, common_1.Query)('installation_id')),
     __param(1, (0, common_1.Query)('setup_action')),
     __param(2, (0, common_1.Query)('state')),
-    __param(3, (0, common_1.Res)()),
+    __param(3, (0, common_1.Req)()),
+    __param(4, (0, common_1.Res)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, Object]),
+    __metadata("design:paramtypes", [String, String, String, Object, Object]),
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "setup", null);
 __decorate([
@@ -613,8 +727,9 @@ __decorate([
 ], GatewayController.prototype, "getCommitAnalysis", null);
 __decorate([
     (0, common_1.Get)('auth/github-oauth/redirect'),
+    __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "githubOAuthRedirect", null);
 __decorate([
@@ -636,6 +751,31 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "githubOAuthCallback", null);
 __decorate([
+    (0, common_1.Get)('auth/google-oauth/redirect'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], GatewayController.prototype, "googleOAuthRedirect", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('auth/google-oauth/redirect-update'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], GatewayController.prototype, "googleOAuthRedirectUpdate", null);
+__decorate([
+    (0, common_1.Get)('auth/google-oauth/callback'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Res)()),
+    __param(2, (0, common_1.Query)('code')),
+    __param(3, (0, common_1.Query)('state')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String]),
+    __metadata("design:returntype", Promise)
+], GatewayController.prototype, "googleOAuthCallback", null);
+__decorate([
     (0, common_1.Post)('auth/login'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -645,15 +785,17 @@ __decorate([
 __decorate([
     (0, common_1.Post)('auth/reset-password'),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "resetPassword", null);
 __decorate([
     (0, common_1.Post)('auth/register'),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "register", null);
 __decorate([

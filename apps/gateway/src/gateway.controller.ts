@@ -22,7 +22,7 @@ import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { KafkaService } from './kafka/kafka.service';
 import { log } from 'console';
 
-type StatePayload = { next: string; userId: string | number };
+type StatePayload = { next?: string; userId?: string | number };
 
 function encodeState(obj: StatePayload) {
   return Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -36,6 +36,44 @@ function decodeState(raw?: string): StatePayload | null {
   } catch {
     return null;
   }
+}
+
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function normalizeOrigin(value?: string): string | undefined {
+  const headerValue = value?.split(',')[0]?.trim();
+  if (!headerValue) return undefined;
+
+  try {
+    return new URL(headerValue).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function getRequestOrigin(req: Request): string {
+  const origin = normalizeOrigin(firstHeaderValue(req.headers.origin));
+  if (origin) return origin;
+
+  const referer = normalizeOrigin(firstHeaderValue(req.headers.referer));
+  if (referer) return referer;
+
+  const forwardedHost = firstHeaderValue(req.headers['x-forwarded-host']);
+  if (forwardedHost) {
+    const forwardedProto =
+      firstHeaderValue(req.headers['x-forwarded-proto']) || req.protocol || 'https';
+    return `${forwardedProto.split(',')[0].trim()}://${forwardedHost.split(',')[0].trim()}`;
+  }
+
+  const host = firstHeaderValue(req.headers.host);
+  return host ? `${req.protocol || 'http'}://${host}` : '';
+}
+
+function joinFrontendUrl(frontendUrl: string, path: string): string {
+  return `${frontendUrl.replace(/\/+$/, '')}${path}`;
 }
 
 function verifySignature(
@@ -79,7 +117,7 @@ export class GatewayController {
   async githubAppRedirect(@Req() req: Request) {
     const user = req.user as any;
     const state = encodeState({
-      next: process.env.FE_URL!,
+      next: getRequestOrigin(req),
       userId: user.id,
     });
     const result: any = await this.gw.exec('git', 'get_install_app_url', {
@@ -103,6 +141,7 @@ export class GatewayController {
     @Query('installation_id') installationId: string,
     @Query('setup_action') setupAction: string,
     @Query('state') state: string,
+    @Req() req: Request,
     @Res() res: any,
   ) {
     // Giải mã state nếu bạn encode userId/redirect
@@ -126,11 +165,15 @@ export class GatewayController {
     if (result && result?.data) {
       const access_token = result.data.access_token;
       const refresh_token = result.data.refresh_token;
+      const frontendUrl = stateDecoded.next || getRequestOrigin(req);
       return res.redirect(
-        `${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+        joinFrontendUrl(
+          frontendUrl,
+          `/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+        ),
       );
     } else {
-      return res.redirect(process.env.FE_URL);
+      return res.redirect(stateDecoded.next || getRequestOrigin(req));
     }
   }
 
@@ -266,10 +309,16 @@ export class GatewayController {
   // ---------- AUTH ----------
   // FE: POST /api/auth/github_oauth?code=...
   @Get('auth/github-oauth/redirect')
-  async githubOAuthRedirect() {
+  async githubOAuthRedirect(@Req() req: Request) {
     const clientId = process.env.GITHUB_CLIENT_ID;
     const callbackUrl = process.env.GITHUB_CALLBACK_URL;
-    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}`;
+    const params = new URLSearchParams({
+      client_id: clientId ?? '',
+      scope: 'user:email',
+      redirect_uri: callbackUrl ?? '',
+      state: encodeState({ next: getRequestOrigin(req) }),
+    });
+    const url = `https://github.com/login/oauth/authorize?${params.toString()}`;
 
     return { url };
   }
@@ -281,7 +330,13 @@ export class GatewayController {
     if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
     const clientId = process.env.GITHUB_CLIENT_ID;
     const callbackUrl = process.env.GITHUB_CALLBACK_URL;
-    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=user:email&redirect_uri=${callbackUrl}&state=${user.id}`;
+    const params = new URLSearchParams({
+      client_id: clientId ?? '',
+      scope: 'user:email',
+      redirect_uri: callbackUrl ?? '',
+      state: encodeState({ next: getRequestOrigin(req), userId: user.id }),
+    });
+    const url = `https://github.com/login/oauth/authorize?${params.toString()}`;
 
     return { url };
   }
@@ -293,6 +348,8 @@ export class GatewayController {
     @Query('code') code: string,
     @Query('state') state?: string,
   ) {
+    const stateDecoded = decodeState(state);
+    const frontendUrl = stateDecoded?.next || getRequestOrigin(req);
     try {
       const safeReq = {
         session: (req as any).session,
@@ -302,7 +359,8 @@ export class GatewayController {
       const result: any = await this.gw.exec('git', 'github_oauth_callback', {
         req: safeReq,
         code,
-        state: state ?? undefined,
+        state: stateDecoded?.userId ?? state ?? undefined,
+        frontendUrl,
       });
       if (result?.data && result.data.user) {
         const isInstall = result.data.isInstall;
@@ -316,20 +374,23 @@ export class GatewayController {
             const access_token = tokenInfo.data.access_token;
             const refresh_token = tokenInfo.data.refresh_token;
             return res.redirect(
-              `${process.env.FE_URL}/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+              joinFrontendUrl(
+                frontendUrl,
+                `/auth/github/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+              ),
             );
           } else {
-            return res.redirect(`${process.env.FE_URL}`);
+            return res.redirect(frontendUrl);
           }
         }
       }
     } catch {
-      return res.redirect(`${process.env.FE_URL}/error?error=githuboauth`);
+      return res.redirect(joinFrontendUrl(frontendUrl, '/error?error=githuboauth'));
     }
   }
 
   @Get('auth/google-oauth/redirect')
-  async googleOAuthRedirect() {
+  async googleOAuthRedirect(@Req() req: Request) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
     const params = new URLSearchParams({
@@ -338,6 +399,7 @@ export class GatewayController {
       response_type: 'code',
       scope: 'openid email profile',
       prompt: 'select_account',
+      state: encodeState({ next: getRequestOrigin(req) }),
     });
     const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 
@@ -358,7 +420,7 @@ export class GatewayController {
       response_type: 'code',
       scope: 'openid email profile',
       prompt: 'select_account',
-      state: String(user.id),
+      state: encodeState({ next: getRequestOrigin(req), userId: user.id }),
     });
     const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 
@@ -367,14 +429,17 @@ export class GatewayController {
 
   @Get('auth/google-oauth/callback')
   async googleOAuthCallback(
+    @Req() req: Request,
     @Res() res: Response,
     @Query('code') code: string,
     @Query('state') state?: string,
   ) {
+    const stateDecoded = decodeState(state);
+    const frontendUrl = stateDecoded?.next || getRequestOrigin(req);
     try {
       const result: any = await this.gw.exec('git', 'google_oauth_callback', {
         code,
-        state: state ?? undefined,
+        state: stateDecoded?.userId ?? state ?? undefined,
       });
 
       if (result?.data && result.data.user) {
@@ -385,14 +450,17 @@ export class GatewayController {
           const access_token = tokenInfo.data.access_token;
           const refresh_token = tokenInfo.data.refresh_token;
           return res.redirect(
-            `${process.env.FE_URL}/auth/google/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+            joinFrontendUrl(
+              frontendUrl,
+              `/auth/google/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+            ),
           );
         }
       }
 
-      return res.redirect(`${process.env.FE_URL}`);
+      return res.redirect(frontendUrl);
     } catch {
-      return res.redirect(`${process.env.FE_URL}/error?error=googleoauth`);
+      return res.redirect(joinFrontendUrl(frontendUrl, '/error?error=googleoauth'));
     }
   }
 
@@ -407,14 +475,20 @@ export class GatewayController {
 
 
   @Post('auth/reset-password')
-  async resetPassword(@Body() dto: any) {
+  async resetPassword(@Body() dto: any, @Req() req: Request) {
     // uỷ quyền cho AuthService: { cmd: 'reset_password' }
-    return this.gw.exec('auth', 'reset_password', dto);
+    return this.gw.exec('auth', 'reset_password', {
+      ...dto,
+      frontendUrl: getRequestOrigin(req),
+    });
   }
 
   @Post('auth/register')
-  async register(@Body() dto: any) {
-    return this.gw.exec('auth', 'register', dto);
+  async register(@Body() dto: any, @Req() req: Request) {
+    return this.gw.exec('auth', 'register', {
+      ...dto,
+      frontendUrl: getRequestOrigin(req),
+    });
   }
   @UseGuards(JwtAuthGuard)
   @Post('auth/update-profile')

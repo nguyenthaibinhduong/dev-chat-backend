@@ -24,7 +24,9 @@ let GitController = class GitController {
         var _a;
         switch (payload.cmd) {
             case 'github_oauth_callback':
-                return await this.GitService.githubOAuthCallback(payload.data.req, payload.data.code, payload.data.state);
+                return await this.GitService.githubOAuthCallback(payload.data.req, payload.data.code, payload.data.state, payload.data.frontendUrl);
+            case 'google_oauth_callback':
+                return await this.GitService.googleOAuthCallback(payload.data.code, payload.data.state);
             case 'github_app_setup':
                 return await this.GitService.githubAppSetup(payload.data.userId, payload.data.installationId, payload.data.userToken);
             case 'get_install_app_url':

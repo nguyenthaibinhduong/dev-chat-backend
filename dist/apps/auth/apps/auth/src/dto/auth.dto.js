@@ -48,10 +48,6 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], LoginDto.prototype, "password", void 0);
-__decorate([
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], LoginDto.prototype, "captchaToken", void 0);
 class AuthResponseDto {
 }
 exports.AuthResponseDto = AuthResponseDto;

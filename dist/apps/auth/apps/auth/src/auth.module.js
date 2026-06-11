@@ -26,6 +26,7 @@ const auth_controller_1 = require("./auth.controller");
 const auth_service_1 = require("./auth.service");
 const user_repository_1 = require("./repositories/user.repository");
 const github_strategy_1 = require("./strategies/github.strategy");
+const google_strategy_1 = require("./strategies/google.strategy");
 const jwt_strategy_1 = require("./strategies/jwt.strategy");
 let AuthModule = class AuthModule {
 };
@@ -75,8 +76,10 @@ exports.AuthModule = AuthModule = __decorate([
             user_repository_1.UserRepository,
             jwt_strategy_1.JwtStrategy,
             github_strategy_1.GithubStrategy,
+            google_strategy_1.GoogleStrategy,
             {
                 provide: 'REDIS_CLIENT',
+                inject: [config_1.ConfigService],
                 useFactory: async (config) => {
                     return new ioredis_1.default({
                         host: (0, common_2.getEnv)('REDIS_HOST', 'localhost'),

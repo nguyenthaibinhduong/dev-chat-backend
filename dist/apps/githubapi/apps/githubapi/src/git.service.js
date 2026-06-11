@@ -131,7 +131,13 @@ let GitService = class GitService extends common_2.BaseService {
         }
         return { ok: true, token: data.access_token };
     }
-    async githubOAuthCallback(req, code, state) {
+    normalizeFrontendUrl(frontendUrl) {
+        if (!frontendUrl) {
+            throw new common_2.RpcCustomException('Missing frontend origin header', 400);
+        }
+        return frontendUrl.replace(/\/+$/, '');
+    }
+    async githubOAuthCallback(req, code, state, frontendUrl) {
         var _a, _b;
         try {
             if (!code) {
@@ -164,7 +170,7 @@ let GitService = class GitService extends common_2.BaseService {
                 }
                 if ((!user.github_installation_id && state) ||
                     (state && !user.github_verified)) {
-                    const nextUrl = process.env.FE_URL;
+                    const nextUrl = this.normalizeFrontendUrl(frontendUrl);
                     const statePayload = { next: nextUrl, userId: user.id };
                     const encoded = Buffer.from(JSON.stringify(statePayload), 'utf8').toString('base64url');
                     const installUrl = this.getInstallAppUrl(encoded);
@@ -175,7 +181,7 @@ let GitService = class GitService extends common_2.BaseService {
                     };
                 }
                 if (!user.github_verified && !user.github_installation_id && !state) {
-                    const nextUrl = process.env.FE_URL;
+                    const nextUrl = this.normalizeFrontendUrl(frontendUrl);
                     const statePayload = { next: nextUrl, userId: user.id };
                     const encoded = Buffer.from(JSON.stringify(statePayload), 'utf8').toString('base64url');
                     const installUrl = this.getInstallAppUrl(encoded);
@@ -202,7 +208,7 @@ let GitService = class GitService extends common_2.BaseService {
                 provider_id: String(ghUser.id),
             });
             await this.userRepo.save(user);
-            const nextUrl = state || process.env.FE_URL;
+            const nextUrl = this.normalizeFrontendUrl(frontendUrl);
             const statePayload = { next: nextUrl, userId: user.id };
             const encoded = Buffer.from(JSON.stringify(statePayload), 'utf8').toString('base64url');
             const installUrl = this.getInstallAppUrl(encoded);
@@ -217,9 +223,143 @@ let GitService = class GitService extends common_2.BaseService {
             };
             return { nextUrl: installUrl, user, isInstall: true };
         }
-        catch {
+        catch (error) {
+            if (error instanceof common_2.RpcCustomException) {
+                throw error;
+            }
             throw new common_2.RpcCustomException('Không thể xác thực người dùng GitHub hoặc đã tồn tại tài khoản', 404);
         }
+    }
+    async exchangeGoogleOAuthCodeForToken(code) {
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+        const redirectUri = process.env.GOOGLE_CALLBACK_URL;
+        if (!clientId || !clientSecret || !redirectUri) {
+            return {
+                ok: false,
+                status: 500,
+                error: 'Missing required Google OAuth environment variables',
+            };
+        }
+        const res = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                client_id: clientId,
+                client_secret: clientSecret,
+                code,
+                redirect_uri: redirectUri,
+                grant_type: 'authorization_code',
+            }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+            return {
+                ok: false,
+                status: res.status,
+                error: data.error_description || data.error || JSON.stringify(data),
+            };
+        }
+        return { ok: true, token: data.access_token };
+    }
+    async googleOAuthCallback(code, state) {
+        var _a, _b;
+        try {
+            if (!code) {
+                throw new common_2.RpcCustomException('Missing code', 400);
+            }
+            const result = await this.exchangeGoogleOAuthCodeForToken(code);
+            if (!result.ok) {
+                throw new common_2.RpcCustomException(`token exchange failed: ${result.status} ${result.error}`, 400);
+            }
+            const googleUser = await this.fetchGoogleUser(result.token);
+            if (!(googleUser === null || googleUser === void 0 ? void 0 : googleUser.sub) || !(googleUser === null || googleUser === void 0 ? void 0 : googleUser.email)) {
+                throw new common_2.RpcCustomException('Google account has no verified identity', 400);
+            }
+            if (googleUser.email_verified === false) {
+                throw new common_2.RpcCustomException('Google email is not verified', 400);
+            }
+            let user = null;
+            if (state) {
+                user = await this.userRepo.findOne({ where: { id: state } });
+                if (!user) {
+                    throw new common_2.RpcCustomException('User not found', 404);
+                }
+                const emailOwner = await this.userRepo.findOne({
+                    where: { email: googleUser.email },
+                });
+                if (emailOwner && String(emailOwner.id) !== String(user.id)) {
+                    throw new common_2.RpcCustomException('Google email belongs to another user', 409);
+                }
+            }
+            else {
+                user = await this.userRepo.findOne({
+                    where: [
+                        { provider: 'google', provider_id: String(googleUser.sub) },
+                        { email: googleUser.email },
+                    ],
+                });
+            }
+            if (user) {
+                if (!user.isActive) {
+                    throw new common_2.RpcCustomException('User is disabled', 403);
+                }
+                let changed = false;
+                if (!user.provider || user.provider === 'google') {
+                    if (user.provider !== 'google') {
+                        user.provider = 'google';
+                        changed = true;
+                    }
+                    if (user.provider_id !== String(googleUser.sub)) {
+                        user.provider_id = String(googleUser.sub);
+                        changed = true;
+                    }
+                }
+                if (!user.username && googleUser.name) {
+                    user.username = googleUser.name;
+                    changed = true;
+                }
+                if (!user.avatar && googleUser.picture) {
+                    user.avatar = googleUser.picture;
+                    changed = true;
+                }
+                if (!user.email_verified) {
+                    user.email_verified = true;
+                    changed = true;
+                }
+                if (changed) {
+                    await this.userRepo.save(user);
+                }
+                return { user: { id: user.id } };
+            }
+            user = this.userRepo.create({
+                email: googleUser.email,
+                username: (_a = googleUser.name) !== null && _a !== void 0 ? _a : googleUser.email.split('@')[0],
+                role: 'user',
+                avatar: (_b = googleUser.picture) !== null && _b !== void 0 ? _b : null,
+                email_verified: true,
+                provider: 'google',
+                provider_id: String(googleUser.sub),
+            });
+            await this.userRepo.save(user);
+            return { user: { id: user.id } };
+        }
+        catch (error) {
+            if (error instanceof common_2.RpcCustomException) {
+                throw error;
+            }
+            throw new common_2.RpcCustomException('Khong the xac thuc nguoi dung Google hoac tai khoan da ton tai', 404);
+        }
+    }
+    async fetchGoogleUser(accessToken) {
+        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok)
+            throw new common_2.RpcCustomException('Failed to fetch Google user');
+        return res.json();
     }
     async fetchGitHubUser(userToken) {
         const res = await fetch('https://api.github.com/user', {

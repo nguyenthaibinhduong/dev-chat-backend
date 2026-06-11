@@ -29,9 +29,9 @@ Authorization: Bearer <access_token>
 | Method | Path | Auth | Body/Query chính |
 | --- | --- | --- | --- |
 | POST | `/auth/register` | No | `email`, `password`, `username` |
-| POST | `/auth/login` | No | `email`, `password`, `otp?` |
+| POST | `/auth/login` | No | `email`, `password` |
 | POST | `/auth/refresh-token` | No | `refresh_token` |
-| POST | `/auth/reset-password` | No | `email`, `captchaToken`, `otp?` |
+| POST | `/auth/reset-password` | No | `email`, `otp?` |
 | GET | `/auth/confirm-email?token=...` | No | `token` |
 | POST | `/auth/get-profile` | Yes | none |
 | POST | `/auth/update-profile` | Yes | profile fields |
@@ -39,6 +39,9 @@ Authorization: Bearer <access_token>
 | GET | `/auth/github-oauth/redirect` | No | Trả URL OAuth GitHub |
 | POST | `/auth/github-oauth/redirect-update` | Yes | Trả URL OAuth GitHub gắn user |
 | GET | `/auth/github-oauth/callback` | No | `code`, `state?` |
+| GET | `/auth/google-oauth/redirect` | No | Tra URL OAuth Google |
+| POST | `/auth/google-oauth/redirect-update` | Yes | Tra URL OAuth Google gan user |
+| GET | `/auth/google-oauth/callback` | No | `code`, `state?` |
 
 Login example:
 
@@ -47,6 +50,8 @@ curl -X POST http://localhost:3088/v1/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"password"}'
 ```
+
+Google OAuth setup: see `docs/GOOGLE_OAUTH.md`.
 
 ## Channels And Messages
 
@@ -149,4 +154,3 @@ Server emit:
 | `receiveRemoveChannel` | User bị remove khỏi channel |
 | `receiveMessage` | Message pending/final/error |
 | `receiveNotification` | Notification realtime |
-

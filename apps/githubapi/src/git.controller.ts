@@ -15,6 +15,7 @@ export class GitController {
           payload.data.req,
           payload.data.code,
           payload.data.state,
+          payload.data.frontendUrl,
         );
       case 'google_oauth_callback':
         return await this.GitService.googleOAuthCallback(

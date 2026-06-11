@@ -256,6 +256,159 @@ export class GitService extends BaseService<Message | Channel> {
   }
 
   // === Lấy user info bằng user token ===
+  async exchangeGoogleOAuthCodeForToken(code: string) {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_CALLBACK_URL;
+
+    if (!clientId || !clientSecret || !redirectUri) {
+      return {
+        ok: false,
+        status: 500,
+        error: 'Missing required Google OAuth environment variables',
+      };
+    }
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      return {
+        ok: false,
+        status: res.status,
+        error: data.error_description || data.error || JSON.stringify(data),
+      };
+    }
+
+    return { ok: true, token: data.access_token as string };
+  }
+
+  async googleOAuthCallback(code: string, state?: string) {
+    try {
+      if (!code) {
+        throw new RpcCustomException('Missing code', 400);
+      }
+
+      const result = await this.exchangeGoogleOAuthCodeForToken(code);
+      if (!result.ok) {
+        throw new RpcCustomException(
+          `token exchange failed: ${result.status} ${result.error}`,
+          400,
+        );
+      }
+
+      const googleUser = await this.fetchGoogleUser(result.token!);
+      if (!googleUser?.sub || !googleUser?.email) {
+        throw new RpcCustomException('Google account has no verified identity', 400);
+      }
+
+      if (googleUser.email_verified === false) {
+        throw new RpcCustomException('Google email is not verified', 400);
+      }
+
+      let user: any = null;
+      if (state) {
+        user = await this.userRepo.findOne({ where: { id: state } });
+        if (!user) {
+          throw new RpcCustomException('User not found', 404);
+        }
+
+        const emailOwner = await this.userRepo.findOne({
+          where: { email: googleUser.email },
+        });
+        if (emailOwner && String(emailOwner.id) !== String(user.id)) {
+          throw new RpcCustomException('Google email belongs to another user', 409);
+        }
+      } else {
+        user = await this.userRepo.findOne({
+          where: [
+            { provider: 'google', provider_id: String(googleUser.sub) },
+            { email: googleUser.email },
+          ],
+        });
+      }
+
+      if (user) {
+        if (!user.isActive) {
+          throw new RpcCustomException('User is disabled', 403);
+        }
+
+        let changed = false;
+        if (!user.provider || user.provider === 'google') {
+          if (user.provider !== 'google') {
+            user.provider = 'google';
+            changed = true;
+          }
+          if (user.provider_id !== String(googleUser.sub)) {
+            user.provider_id = String(googleUser.sub);
+            changed = true;
+          }
+        }
+        if (!user.username && googleUser.name) {
+          user.username = googleUser.name;
+          changed = true;
+        }
+        if (!user.avatar && googleUser.picture) {
+          user.avatar = googleUser.picture;
+          changed = true;
+        }
+        if (!user.email_verified) {
+          user.email_verified = true;
+          changed = true;
+        }
+
+        if (changed) {
+          await this.userRepo.save(user);
+        }
+
+        return { user: { id: user.id } };
+      }
+
+      user = this.userRepo.create({
+        email: googleUser.email,
+        username: googleUser.name ?? googleUser.email.split('@')[0],
+        role: 'user',
+        avatar: googleUser.picture ?? null,
+        email_verified: true,
+        provider: 'google',
+        provider_id: String(googleUser.sub),
+      });
+      await this.userRepo.save(user);
+
+      return { user: { id: user.id } };
+    } catch (error: any) {
+      if (error instanceof RpcCustomException) {
+        throw error;
+      }
+
+      throw new RpcCustomException(
+        'Khong the xac thuc nguoi dung Google hoac tai khoan da ton tai',
+        404,
+      );
+    }
+  }
+
+  async fetchGoogleUser(accessToken: string) {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new RpcCustomException('Failed to fetch Google user');
+    return res.json();
+  }
+
   async fetchGitHubUser(userToken: string) {
     const res = await fetch('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${userToken}` },

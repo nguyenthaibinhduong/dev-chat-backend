@@ -13,13 +13,11 @@ import { Like, Repository, Not, ILike } from 'typeorm';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as crypto from 'crypto';
 import Redis from 'ioredis';
-import axios from 'axios';
 
 @Injectable()
 export class AuthService {
   private readonly algorithm = 'aes-256-cbc';
   private encryptionKey: Buffer;
-  private readonly recaptchaSecret = process.env.RECAPTCHA_SECRET;
 
   constructor(
     @InjectRepository(User)
@@ -32,96 +30,6 @@ export class AuthService {
     // Khởi tạo encryption key (giống gateway)
     const key = process.env.ID_ENCRYPTION_KEY || 'default-secret-key-32-chars-min';
     this.encryptionKey = crypto.scryptSync(key, 'salt', 32);
-  }
-
-  /**
-   * Xác thực reCAPTCHA token
-   */
-  private async verifyCaptcha(token: string): Promise<boolean> {
-    if (!token || token.trim() === '') {
-      console.log('❌ [CAPTCHA] Token rỗng');
-      throw new RpcException({
-        msg: 'Vui lòng xác thực CAPTCHA',
-        status: 400,
-      });
-    }
-
-    if (!this.recaptchaSecret) {
-      console.error('❌ [CAPTCHA] RECAPTCHA_SECRET chưa được cấu hình');
-      throw new RpcException({
-        msg: 'Cấu hình CAPTCHA không hợp lệ',
-        status: 500,
-      });
-    }
-
-    try {
-      console.log(`🔍 [CAPTCHA] Đang xác thực token: ${token.substring(0, 20)}...`);
-
-      const response = await axios.post(
-        'https://www.google.com/recaptcha/api/siteverify',
-        new URLSearchParams({
-          secret: this.recaptchaSecret,
-          response: token,
-        }),
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          timeout: 10000,
-        }
-      );
-
-      const { success, score, action, 'error-codes': errorCodes } = response.data;
-
-      console.log(`📊 [CAPTCHA] Kết quả:`, {
-        success,
-        score,
-        action,
-        errorCodes,
-      });
-
-      if (!success) {
-        console.warn(`❌ [CAPTCHA] Xác thực thất bại:`, errorCodes);
-        throw new RpcException({
-          msg: 'CAPTCHA không hợp lệ hoặc đã hết hạn',
-          status: 400,
-        });
-      }
-
-      // Kiểm tra score (reCAPTCHA v3)
-      if (score !== undefined && score < 0.5) {
-        console.warn(`⚠️ [CAPTCHA] Score thấp: ${score}`);
-        throw new RpcException({
-          msg: 'Xác thực CAPTCHA không đạt yêu cầu bảo mật',
-          status: 403,
-        });
-      }
-
-      console.log(`✅ [CAPTCHA] Xác thực thành công - Score: ${score || 'N/A'}`);
-      return true;
-
-    } catch (error: any) {
-      if (error instanceof RpcException) {
-        throw error;
-      }
-
-      console.error(`❌ [CAPTCHA] Lỗi:`, {
-        message: error?.message,
-        code: error?.code,
-      });
-
-      if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-        throw new RpcException({
-          msg: 'Không thể kết nối đến dịch vụ CAPTCHA',
-          status: 504,
-        });
-      }
-
-      throw new RpcException({
-        msg: 'Lỗi xác thực CAPTCHA',
-        status: 500,
-      });
-    }
   }
 
   /**
@@ -209,9 +117,9 @@ export class AuthService {
       registerDto.email,
     );
     if (existingUser) {
-      if (existingUser.provider === 'github') {
+      if (existingUser.provider === 'github' || existingUser.provider === 'google') {
         throw new RpcException({
-          msg: 'Tài khoản đã tồn tại dưới dạng đăng nhập bằng GitHub. Vui lòng đăng nhập bằng GitHub hoặc dùng chức năng "Thiết lập mật khẩu" để liên kết.',
+          msg: `Tài khoản đã tồn tại dưới dạng đăng nhập bằng ${existingUser.provider}. Vui lòng đăng nhập bằng ${existingUser.provider}.`,
           status: 409,
         });
       }
@@ -292,19 +200,7 @@ export class AuthService {
 
   async login(loginDto: LoginDto): Promise<any> {
     try {
-      // ✅ 1. XÁC THỰC CAPTCHA TRƯỚC TIÊN
-      console.log('🔐 [LOGIN] Bắt đầu xác thực CAPTCHA...');
-      if (loginDto.captchaToken) {
-        await this.verifyCaptcha(loginDto.captchaToken);
-        console.log('✅ [LOGIN] CAPTCHA hợp lệ');
-      } else {
-         throw new RpcException({
-          msg: 'Vui lòng xác thực CAPTCHA',
-          status: 401,
-        });
-      }
-
-      // 2. Tìm user
+      // 1. Tìm user
       console.log(`🔍 [LOGIN] Tìm user với email: ${loginDto.email}`);
       const user: any = await this.userRepository.findByEmail(loginDto.email);
       if (!user) {
@@ -1108,12 +1004,11 @@ export class AuthService {
 
   /**
    * Reset mật khẩu - 2 bước với giới hạn 3 lần nhập sai
-   * Bước 1: Gửi OTP (có CAPTCHA)
-   * Bước 2: Xác thực OTP và reset password (KHÔNG cần CAPTCHA)
+   * Bước 1: Gửi OTP
+   * Bước 2: Xác thực OTP và reset password
    */
   async resetPassword(
     email: string, 
-    captchaToken?: string, 
     otp?: string
   ): Promise<any> {
     try {
@@ -1121,18 +1016,7 @@ export class AuthService {
       if (!otp) {
         console.log('🔐 [RESET PASSWORD - STEP 1] Gửi OTP');
         
-        // 1.1. Xác thực CAPTCHA (bắt buộc ở bước 1)
-        if (!captchaToken) {
-          throw new RpcException({
-            msg: 'Vui lòng xác thực CAPTCHA',
-            status: 400,
-          });
-        }
-        
-        await this.verifyCaptcha(captchaToken);
-        console.log('✅ [RESET PASSWORD - STEP 1] CAPTCHA hợp lệ');
-
-        // 1.2. Tìm user theo email
+        // 1.1. Tìm user theo email
         console.log(`🔍 [RESET PASSWORD - STEP 1] Tìm user với email: ${email}`);
         const user: any = await this.userRepository.findByEmail(email);
         

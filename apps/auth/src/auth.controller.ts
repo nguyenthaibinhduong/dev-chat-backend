@@ -41,13 +41,10 @@ export class AuthController {
           data.newPassword,
         );
       
-       case 'reset_password':
+      case 'reset_password':
         return this.authService.resetPassword(
           data.email,
-        
-          data.captchaToken,
-
-            data.otp
+          data.otp,
         );
       case 'admin_user_management':
         return this.authService.CRUD(data.user.id, data, data.method);

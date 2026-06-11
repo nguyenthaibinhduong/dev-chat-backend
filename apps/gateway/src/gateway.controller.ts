@@ -327,6 +327,75 @@ export class GatewayController {
       return res.redirect(`${process.env.FE_URL}/error?error=githuboauth`);
     }
   }
+
+  @Get('auth/google-oauth/redirect')
+  async googleOAuthRedirect() {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
+    const params = new URLSearchParams({
+      client_id: clientId ?? '',
+      redirect_uri: callbackUrl ?? '',
+      response_type: 'code',
+      scope: 'openid email profile',
+      prompt: 'select_account',
+    });
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+
+    return { url };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('auth/google-oauth/redirect-update')
+  async googleOAuthRedirectUpdate(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) return { code: 401, msg: 'Unauthorized', data: null };
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
+    const params = new URLSearchParams({
+      client_id: clientId ?? '',
+      redirect_uri: callbackUrl ?? '',
+      response_type: 'code',
+      scope: 'openid email profile',
+      prompt: 'select_account',
+      state: String(user.id),
+    });
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+
+    return { url };
+  }
+
+  @Get('auth/google-oauth/callback')
+  async googleOAuthCallback(
+    @Res() res: Response,
+    @Query('code') code: string,
+    @Query('state') state?: string,
+  ) {
+    try {
+      const result: any = await this.gw.exec('git', 'google_oauth_callback', {
+        code,
+        state: state ?? undefined,
+      });
+
+      if (result?.data && result.data.user) {
+        const tokenInfo: any = await this.gw.exec('auth', 'get_token_info', {
+          userId: result.data.user.id,
+        });
+        if (tokenInfo?.data) {
+          const access_token = tokenInfo.data.access_token;
+          const refresh_token = tokenInfo.data.refresh_token;
+          return res.redirect(
+            `${process.env.FE_URL}/auth/google/callback?access_token=${access_token}&refresh_token=${refresh_token}`,
+          );
+        }
+      }
+
+      return res.redirect(`${process.env.FE_URL}`);
+    } catch {
+      return res.redirect(`${process.env.FE_URL}/error?error=googleoauth`);
+    }
+  }
+
   // FE: POST /api/auth/login
   // Body: { email: string, password: string, otp?: string }
   @Post('auth/login')

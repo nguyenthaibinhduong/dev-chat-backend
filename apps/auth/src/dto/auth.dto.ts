@@ -34,9 +34,6 @@ export class LoginDto {
 
   @IsString()
   password: string;
-  
-  @IsString()
-  captchaToken: string;
 }
 
 export class AuthResponseDto {

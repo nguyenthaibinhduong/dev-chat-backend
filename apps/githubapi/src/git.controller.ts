@@ -16,6 +16,11 @@ export class GitController {
           payload.data.code,
           payload.data.state,
         );
+      case 'google_oauth_callback':
+        return await this.GitService.googleOAuthCallback(
+          payload.data.code,
+          payload.data.state,
+        );
       case 'github_app_setup':
         return await this.GitService.githubAppSetup(
           payload.data.userId,

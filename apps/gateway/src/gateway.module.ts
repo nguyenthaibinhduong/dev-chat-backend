@@ -16,11 +16,15 @@ import { ChatSocketService } from './socket.service';
 const SERVICES = ['auth', 'chat', 'upload', 'git', 'notification'];
 const TOPICS = SERVICES.map((service) => `svc.${service}.exec`);
 
+function getEnvFilePath(): string[] {
+  return process.env.NODE_ENV ? [`.env.${process.env.NODE_ENV}`, '.env'] : ['.env'];
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: `.env.${process.env.NODE_ENV}`,
+      envFilePath: getEnvFilePath(),
     }),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'dev-secret',

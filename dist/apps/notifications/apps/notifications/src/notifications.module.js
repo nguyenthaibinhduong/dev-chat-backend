@@ -18,6 +18,15 @@ const typeorm_1 = require("@nestjs/typeorm");
 const entities_1 = require("../../../libs/entities/src");
 const database_1 = require("../../../libs/database/src");
 const common_2 = require("../../../libs/common/src");
+const getMongoUri = (configService) => {
+    const uri = configService.get('MONGODB_URI');
+    if (uri)
+        return uri;
+    const username = encodeURIComponent(configService.get('MONGO_INITDB_ROOT_USERNAME') || 'admin');
+    const password = encodeURIComponent(configService.get('MONGO_INITDB_ROOT_PASSWORD') || 'password');
+    const database = configService.get('MONGO_INITDB_DATABASE') || 'dev_chat';
+    return `mongodb://${username}:${password}@mongodb:27017/${database}?authSource=admin`;
+};
 let NotificationModule = class NotificationModule {
 };
 exports.NotificationModule = NotificationModule;
@@ -43,9 +52,7 @@ exports.NotificationModule = NotificationModule = __decorate([
             mongoose_1.MongooseModule.forRootAsync({
                 inject: [config_1.ConfigService],
                 useFactory: (configService) => ({
-                    uri: configService.get('MONGODB_URI'),
-                    useNewUrlParser: true,
-                    useUnifiedTopology: true,
+                    uri: getMongoUri(configService),
                 }),
             }),
             mongoose_1.MongooseModule.forFeature([

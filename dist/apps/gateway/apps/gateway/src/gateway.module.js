@@ -56,6 +56,9 @@ const redis_provider_1 = require("./redis/redis.provider");
 const socket_service_1 = require("./socket.service");
 const SERVICES = ['auth', 'chat', 'upload', 'git', 'notification'];
 const TOPICS = SERVICES.map((service) => `svc.${service}.exec`);
+function getEnvFilePath() {
+    return process.env.NODE_ENV ? [`.env.${process.env.NODE_ENV}`, '.env'] : ['.env'];
+}
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -64,7 +67,7 @@ exports.AppModule = AppModule = __decorate([
         imports: [
             config_1.ConfigModule.forRoot({
                 isGlobal: true,
-                envFilePath: `.env.${process.env.NODE_ENV}`,
+                envFilePath: getEnvFilePath(),
             }),
             jwt_1.JwtModule.register({
                 secret: process.env.JWT_SECRET || 'dev-secret',

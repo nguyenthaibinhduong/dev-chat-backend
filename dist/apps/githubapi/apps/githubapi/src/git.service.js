@@ -53,6 +53,19 @@ const entities_1 = require("../../../libs/entities/src");
 const entities_2 = require("../../../libs/entities/src");
 const common_2 = require("../../../libs/common/src");
 const jwt = __importStar(require("jsonwebtoken"));
+async function fetchWithTimeout(url, init, timeoutMs) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, {
+            ...init,
+            signal: controller.signal,
+        });
+    }
+    finally {
+        clearTimeout(timeoutId);
+    }
+}
 let GitService = class GitService extends common_2.BaseService {
     constructor(messageRepo, channelRepo, userRepo) {
         super(messageRepo);
@@ -230,18 +243,30 @@ let GitService = class GitService extends common_2.BaseService {
             throw new common_2.RpcCustomException('Không thể xác thực người dùng GitHub hoặc đã tồn tại tài khoản', 404);
         }
     }
-    async exchangeGoogleOAuthCodeForToken(code) {
+    async exchangeGoogleOAuthCodeForToken(code, redirectUriOverride) {
         const clientId = process.env.GOOGLE_CLIENT_ID;
         const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-        const redirectUri = process.env.GOOGLE_CALLBACK_URL;
+        const redirectUri = redirectUriOverride || process.env.GOOGLE_CALLBACK_URL;
+        console.log('[GoogleOAuth][git][token-exchange:start]', {
+            hasCode: Boolean(code),
+            hasClientId: Boolean(clientId),
+            hasClientSecret: Boolean(clientSecret),
+            redirectUri,
+            redirectUriSource: redirectUriOverride ? 'callback-state' : 'env',
+        });
         if (!clientId || !clientSecret || !redirectUri) {
+            console.error('[GoogleOAuth][git][token-exchange:missing-env]', {
+                hasClientId: Boolean(clientId),
+                hasClientSecret: Boolean(clientSecret),
+                hasRedirectUri: Boolean(redirectUri),
+            });
             return {
                 ok: false,
                 status: 500,
                 error: 'Missing required Google OAuth environment variables',
             };
         }
-        const res = await fetch('https://oauth2.googleapis.com/token', {
+        const res = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -253,8 +278,15 @@ let GitService = class GitService extends common_2.BaseService {
                 redirect_uri: redirectUri,
                 grant_type: 'authorization_code',
             }),
-        });
+        }, 15000);
         const data = await res.json();
+        console.log('[GoogleOAuth][git][token-exchange:response]', {
+            status: res.status,
+            ok: res.ok,
+            hasAccessToken: Boolean(data === null || data === void 0 ? void 0 : data.access_token),
+            error: data === null || data === void 0 ? void 0 : data.error,
+            errorDescription: data === null || data === void 0 ? void 0 : data.error_description,
+        });
         if (!res.ok || data.error) {
             return {
                 ok: false,
@@ -264,17 +296,30 @@ let GitService = class GitService extends common_2.BaseService {
         }
         return { ok: true, token: data.access_token };
     }
-    async googleOAuthCallback(code, state) {
+    async googleOAuthCallback(code, state, frontendUrl, redirectUri) {
         var _a, _b;
+        console.log('[GoogleOAuth][git][callback:start]', {
+            hasCode: Boolean(code),
+            state,
+            frontendUrl,
+            redirectUri,
+        });
         try {
             if (!code) {
                 throw new common_2.RpcCustomException('Missing code', 400);
             }
-            const result = await this.exchangeGoogleOAuthCodeForToken(code);
+            const result = await this.exchangeGoogleOAuthCodeForToken(code, redirectUri);
             if (!result.ok) {
                 throw new common_2.RpcCustomException(`token exchange failed: ${result.status} ${result.error}`, 400);
             }
             const googleUser = await this.fetchGoogleUser(result.token);
+            console.log('[GoogleOAuth][git][userinfo:success]', {
+                sub: googleUser === null || googleUser === void 0 ? void 0 : googleUser.sub,
+                email: googleUser === null || googleUser === void 0 ? void 0 : googleUser.email,
+                emailVerified: googleUser === null || googleUser === void 0 ? void 0 : googleUser.email_verified,
+                hasName: Boolean(googleUser === null || googleUser === void 0 ? void 0 : googleUser.name),
+                hasPicture: Boolean(googleUser === null || googleUser === void 0 ? void 0 : googleUser.picture),
+            });
             if (!(googleUser === null || googleUser === void 0 ? void 0 : googleUser.sub) || !(googleUser === null || googleUser === void 0 ? void 0 : googleUser.email)) {
                 throw new common_2.RpcCustomException('Google account has no verified identity', 400);
             }
@@ -283,6 +328,7 @@ let GitService = class GitService extends common_2.BaseService {
             }
             let user = null;
             if (state) {
+                console.log('[GoogleOAuth][git][user:lookup-by-state]', { state });
                 user = await this.userRepo.findOne({ where: { id: state } });
                 if (!user) {
                     throw new common_2.RpcCustomException('User not found', 404);
@@ -290,11 +336,19 @@ let GitService = class GitService extends common_2.BaseService {
                 const emailOwner = await this.userRepo.findOne({
                     where: { email: googleUser.email },
                 });
+                console.log('[GoogleOAuth][git][user:email-owner-check]', {
+                    stateUserId: user.id,
+                    emailOwnerId: emailOwner === null || emailOwner === void 0 ? void 0 : emailOwner.id,
+                });
                 if (emailOwner && String(emailOwner.id) !== String(user.id)) {
                     throw new common_2.RpcCustomException('Google email belongs to another user', 409);
                 }
             }
             else {
+                console.log('[GoogleOAuth][git][user:lookup-by-google]', {
+                    providerId: String(googleUser.sub),
+                    email: googleUser.email,
+                });
                 user = await this.userRepo.findOne({
                     where: [
                         { provider: 'google', provider_id: String(googleUser.sub) },
@@ -303,6 +357,12 @@ let GitService = class GitService extends common_2.BaseService {
                 });
             }
             if (user) {
+                console.log('[GoogleOAuth][git][user:found]', {
+                    userId: user.id,
+                    isActive: user.isActive,
+                    provider: user.provider,
+                    hasProviderId: Boolean(user.provider_id),
+                });
                 if (!user.isActive) {
                     throw new common_2.RpcCustomException('User is disabled', 403);
                 }
@@ -332,6 +392,10 @@ let GitService = class GitService extends common_2.BaseService {
                 if (changed) {
                     await this.userRepo.save(user);
                 }
+                console.log('[GoogleOAuth][git][user:return-existing]', {
+                    userId: user.id,
+                    changed,
+                });
                 return { user: { id: user.id } };
             }
             user = this.userRepo.create({
@@ -344,21 +408,44 @@ let GitService = class GitService extends common_2.BaseService {
                 provider_id: String(googleUser.sub),
             });
             await this.userRepo.save(user);
+            console.log('[GoogleOAuth][git][user:created]', {
+                userId: user.id,
+                email: user.email,
+            });
             return { user: { id: user.id } };
         }
         catch (error) {
+            console.error('[GoogleOAuth][git][callback:error]', {
+                message: error === null || error === void 0 ? void 0 : error.message,
+                name: error === null || error === void 0 ? void 0 : error.name,
+                response: error === null || error === void 0 ? void 0 : error.response,
+                status: error === null || error === void 0 ? void 0 : error.status,
+                stack: error === null || error === void 0 ? void 0 : error.stack,
+            });
             if (error instanceof common_2.RpcCustomException) {
                 throw error;
+            }
+            if ((error === null || error === void 0 ? void 0 : error.name) === 'AbortError') {
+                throw new common_2.RpcCustomException('Google OAuth request timed out', 504);
             }
             throw new common_2.RpcCustomException('Khong the xac thuc nguoi dung Google hoac tai khoan da ton tai', 404);
         }
     }
     async fetchGoogleUser(accessToken) {
-        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-            headers: { Authorization: `Bearer ${accessToken}` },
+        console.log('[GoogleOAuth][git][userinfo:start]', {
+            hasAccessToken: Boolean(accessToken),
         });
-        if (!res.ok)
+        const res = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+        }, 15000);
+        if (!res.ok) {
+            const body = await res.text();
+            console.error('[GoogleOAuth][git][userinfo:error]', {
+                status: res.status,
+                body,
+            });
             throw new common_2.RpcCustomException('Failed to fetch Google user');
+        }
         return res.json();
     }
     async fetchGitHubUser(userToken) {

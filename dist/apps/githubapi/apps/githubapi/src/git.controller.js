@@ -22,33 +22,62 @@ let GitController = class GitController {
     }
     async handleGitMessage(payload) {
         var _a;
-        switch (payload.cmd) {
-            case 'github_oauth_callback':
-                return await this.GitService.githubOAuthCallback(payload.data.req, payload.data.code, payload.data.state, payload.data.frontendUrl);
-            case 'google_oauth_callback':
-                return await this.GitService.googleOAuthCallback(payload.data.code, payload.data.state);
-            case 'github_app_setup':
-                return await this.GitService.githubAppSetup(payload.data.userId, payload.data.installationId, payload.data.userToken);
-            case 'get_install_app_url':
-                return this.GitService.getInstallAppUrl(payload.data.state);
-            case 'get_repo_installation':
-                return this.GitService.listInstallationRepos(payload.data.userId, payload.data);
-            case 'get_repo_data_by_url':
-                return this.GitService.loadFromRepoLink(payload.data.userId, payload.data.url || '', payload.data);
-            case 'get_repo_by_ids':
-                return this.GitService.getMultipleReposInfo(payload.data.items);
-            case 'unlink_github_app':
-                return this.GitService.unlinkGitHubApp(payload.data.userId);
-            case 'getCommitDetails':
-                return await this.GitService.getCommitDetails(payload.data.userId, payload.data.owner, payload.data.repo, payload.data.sha);
-            case 'compareCommits':
-                return await this.GitService.compareCommits(payload.data.userId, payload.data.owner, payload.data.repo, payload.data.base, payload.data.head);
-            case 'getCommitDiff':
-                return await this.GitService.getCommitDiff(payload.data.userId, payload.data.owner, payload.data.repo, payload.data.sha);
-            case 'getCommitAnalysis':
-                return await this.GitService.getCommitAnalysisFromGemini(payload.data.userId, payload.data.owner, payload.data.repo, payload.data.sha, (_a = payload.data.prompt) !== null && _a !== void 0 ? _a : '');
-            default:
-                return { error: 'Unknown command' };
+        const requestId = Math.random().toString(36).slice(2, 10);
+        const startedAt = Date.now();
+        console.log('[GitController][message:start]', {
+            requestId,
+            cmd: payload === null || payload === void 0 ? void 0 : payload.cmd,
+            hasData: Boolean(payload === null || payload === void 0 ? void 0 : payload.data),
+            dataKeys: (payload === null || payload === void 0 ? void 0 : payload.data) ? Object.keys(payload.data) : [],
+        });
+        try {
+            switch (payload.cmd) {
+                case 'github_oauth_callback':
+                    return await this.GitService.githubOAuthCallback(payload.data.req, payload.data.code, payload.data.state, payload.data.frontendUrl);
+                case 'google_oauth_callback':
+                    return await this.GitService.googleOAuthCallback(payload.data.code, payload.data.state, payload.data.frontendUrl, payload.data.redirectUri);
+                case 'github_app_setup':
+                    return await this.GitService.githubAppSetup(payload.data.userId, payload.data.installationId, payload.data.userToken);
+                case 'get_install_app_url':
+                    return this.GitService.getInstallAppUrl(payload.data.state);
+                case 'get_repo_installation':
+                    return this.GitService.listInstallationRepos(payload.data.userId, payload.data);
+                case 'get_repo_data_by_url':
+                    return this.GitService.loadFromRepoLink(payload.data.userId, payload.data.url || '', payload.data);
+                case 'get_repo_by_ids':
+                    return this.GitService.getMultipleReposInfo(payload.data.items);
+                case 'unlink_github_app':
+                    return this.GitService.unlinkGitHubApp(payload.data.userId);
+                case 'getCommitDetails':
+                    return await this.GitService.getCommitDetails(payload.data.userId, payload.data.owner, payload.data.repo, payload.data.sha);
+                case 'compareCommits':
+                    return await this.GitService.compareCommits(payload.data.userId, payload.data.owner, payload.data.repo, payload.data.base, payload.data.head);
+                case 'getCommitDiff':
+                    return await this.GitService.getCommitDiff(payload.data.userId, payload.data.owner, payload.data.repo, payload.data.sha);
+                case 'getCommitAnalysis':
+                    return await this.GitService.getCommitAnalysisFromGemini(payload.data.userId, payload.data.owner, payload.data.repo, payload.data.sha, (_a = payload.data.prompt) !== null && _a !== void 0 ? _a : '');
+                default:
+                    return { error: 'Unknown command' };
+            }
+        }
+        catch (error) {
+            console.error('[GitController][message:error]', {
+                requestId,
+                cmd: payload === null || payload === void 0 ? void 0 : payload.cmd,
+                durationMs: Date.now() - startedAt,
+                message: error === null || error === void 0 ? void 0 : error.message,
+                response: error === null || error === void 0 ? void 0 : error.response,
+                status: error === null || error === void 0 ? void 0 : error.status,
+                stack: error === null || error === void 0 ? void 0 : error.stack,
+            });
+            throw error;
+        }
+        finally {
+            console.log('[GitController][message:end]', {
+                requestId,
+                cmd: payload === null || payload === void 0 ? void 0 : payload.cmd,
+                durationMs: Date.now() - startedAt,
+            });
         }
     }
 };

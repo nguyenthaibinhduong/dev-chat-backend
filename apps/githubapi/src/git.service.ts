@@ -16,6 +16,24 @@ type InstallationAccessToken = {
   // ... các field khác GitHub trả về
 };
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 @Injectable()
 export class GitService extends BaseService<Message | Channel> {
   /**
@@ -271,12 +289,26 @@ export class GitService extends BaseService<Message | Channel> {
   }
 
   // === Lấy user info bằng user token ===
-  async exchangeGoogleOAuthCodeForToken(code: string) {
+  async exchangeGoogleOAuthCodeForToken(code: string, redirectUriOverride?: string) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = process.env.GOOGLE_CALLBACK_URL;
+    const redirectUri = redirectUriOverride || process.env.GOOGLE_CALLBACK_URL;
+
+    console.log('[GoogleOAuth][git][token-exchange:start]', {
+      hasCode: Boolean(code),
+      hasClientId: Boolean(clientId),
+      hasClientSecret: Boolean(clientSecret),
+      redirectUri,
+      redirectUriSource: redirectUriOverride ? 'callback-state' : 'env',
+    });
 
     if (!clientId || !clientSecret || !redirectUri) {
+      console.error('[GoogleOAuth][git][token-exchange:missing-env]', {
+        hasClientId: Boolean(clientId),
+        hasClientSecret: Boolean(clientSecret),
+        hasRedirectUri: Boolean(redirectUri),
+      });
+
       return {
         ok: false,
         status: 500,
@@ -284,7 +316,7 @@ export class GitService extends BaseService<Message | Channel> {
       };
     }
 
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    const res = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -296,9 +328,17 @@ export class GitService extends BaseService<Message | Channel> {
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
-    });
+    }, 15000);
 
     const data = await res.json();
+
+    console.log('[GoogleOAuth][git][token-exchange:response]', {
+      status: res.status,
+      ok: res.ok,
+      hasAccessToken: Boolean(data?.access_token),
+      error: data?.error,
+      errorDescription: data?.error_description,
+    });
 
     if (!res.ok || data.error) {
       return {
@@ -311,13 +351,25 @@ export class GitService extends BaseService<Message | Channel> {
     return { ok: true, token: data.access_token as string };
   }
 
-  async googleOAuthCallback(code: string, state?: string) {
+  async googleOAuthCallback(
+    code: string,
+    state?: string,
+    frontendUrl?: string,
+    redirectUri?: string,
+  ) {
+    console.log('[GoogleOAuth][git][callback:start]', {
+      hasCode: Boolean(code),
+      state,
+      frontendUrl,
+      redirectUri,
+    });
+
     try {
       if (!code) {
         throw new RpcCustomException('Missing code', 400);
       }
 
-      const result = await this.exchangeGoogleOAuthCodeForToken(code);
+      const result = await this.exchangeGoogleOAuthCodeForToken(code, redirectUri);
       if (!result.ok) {
         throw new RpcCustomException(
           `token exchange failed: ${result.status} ${result.error}`,
@@ -326,6 +378,14 @@ export class GitService extends BaseService<Message | Channel> {
       }
 
       const googleUser = await this.fetchGoogleUser(result.token!);
+      console.log('[GoogleOAuth][git][userinfo:success]', {
+        sub: googleUser?.sub,
+        email: googleUser?.email,
+        emailVerified: googleUser?.email_verified,
+        hasName: Boolean(googleUser?.name),
+        hasPicture: Boolean(googleUser?.picture),
+      });
+
       if (!googleUser?.sub || !googleUser?.email) {
         throw new RpcCustomException('Google account has no verified identity', 400);
       }
@@ -336,6 +396,7 @@ export class GitService extends BaseService<Message | Channel> {
 
       let user: any = null;
       if (state) {
+        console.log('[GoogleOAuth][git][user:lookup-by-state]', { state });
         user = await this.userRepo.findOne({ where: { id: state } });
         if (!user) {
           throw new RpcCustomException('User not found', 404);
@@ -344,10 +405,18 @@ export class GitService extends BaseService<Message | Channel> {
         const emailOwner = await this.userRepo.findOne({
           where: { email: googleUser.email },
         });
+        console.log('[GoogleOAuth][git][user:email-owner-check]', {
+          stateUserId: user.id,
+          emailOwnerId: emailOwner?.id,
+        });
         if (emailOwner && String(emailOwner.id) !== String(user.id)) {
           throw new RpcCustomException('Google email belongs to another user', 409);
         }
       } else {
+        console.log('[GoogleOAuth][git][user:lookup-by-google]', {
+          providerId: String(googleUser.sub),
+          email: googleUser.email,
+        });
         user = await this.userRepo.findOne({
           where: [
             { provider: 'google', provider_id: String(googleUser.sub) },
@@ -357,6 +426,13 @@ export class GitService extends BaseService<Message | Channel> {
       }
 
       if (user) {
+        console.log('[GoogleOAuth][git][user:found]', {
+          userId: user.id,
+          isActive: user.isActive,
+          provider: user.provider,
+          hasProviderId: Boolean(user.provider_id),
+        });
+
         if (!user.isActive) {
           throw new RpcCustomException('User is disabled', 403);
         }
@@ -389,6 +465,11 @@ export class GitService extends BaseService<Message | Channel> {
           await this.userRepo.save(user);
         }
 
+        console.log('[GoogleOAuth][git][user:return-existing]', {
+          userId: user.id,
+          changed,
+        });
+
         return { user: { id: user.id } };
       }
 
@@ -403,10 +484,27 @@ export class GitService extends BaseService<Message | Channel> {
       });
       await this.userRepo.save(user);
 
+      console.log('[GoogleOAuth][git][user:created]', {
+        userId: user.id,
+        email: user.email,
+      });
+
       return { user: { id: user.id } };
     } catch (error: any) {
+      console.error('[GoogleOAuth][git][callback:error]', {
+        message: error?.message,
+        name: error?.name,
+        response: error?.response,
+        status: error?.status,
+        stack: error?.stack,
+      });
+
       if (error instanceof RpcCustomException) {
         throw error;
+      }
+
+      if (error?.name === 'AbortError') {
+        throw new RpcCustomException('Google OAuth request timed out', 504);
       }
 
       throw new RpcCustomException(
@@ -417,10 +515,23 @@ export class GitService extends BaseService<Message | Channel> {
   }
 
   async fetchGoogleUser(accessToken: string) {
-    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    console.log('[GoogleOAuth][git][userinfo:start]', {
+      hasAccessToken: Boolean(accessToken),
     });
-    if (!res.ok) throw new RpcCustomException('Failed to fetch Google user');
+
+    const res = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }, 15000);
+
+    if (!res.ok) {
+      const body = await res.text();
+      console.error('[GoogleOAuth][git][userinfo:error]', {
+        status: res.status,
+        body,
+      });
+      throw new RpcCustomException('Failed to fetch Google user');
+    }
+
     return res.json();
   }
 

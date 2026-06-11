@@ -9,6 +9,17 @@ export class GitController {
   // Nhận message từ Gateway qua Kafka
   @MessagePattern('svc.git.exec')
   async handleGitMessage(@Payload() payload: any) {
+    const requestId = Math.random().toString(36).slice(2, 10);
+    const startedAt = Date.now();
+
+    console.log('[GitController][message:start]', {
+      requestId,
+      cmd: payload?.cmd,
+      hasData: Boolean(payload?.data),
+      dataKeys: payload?.data ? Object.keys(payload.data) : [],
+    });
+
+    try {
     switch (payload.cmd) {
       case 'github_oauth_callback':
         return await this.GitService.githubOAuthCallback(
@@ -21,6 +32,8 @@ export class GitController {
         return await this.GitService.googleOAuthCallback(
           payload.data.code,
           payload.data.state,
+          payload.data.frontendUrl,
+          payload.data.redirectUri,
         );
       case 'github_app_setup':
         return await this.GitService.githubAppSetup(
@@ -75,6 +88,25 @@ export class GitController {
         );
       default:
         return { error: 'Unknown command' };
+    }
+    } catch (error: any) {
+      console.error('[GitController][message:error]', {
+        requestId,
+        cmd: payload?.cmd,
+        durationMs: Date.now() - startedAt,
+        message: error?.message,
+        response: error?.response,
+        status: error?.status,
+        stack: error?.stack,
+      });
+
+      throw error;
+    } finally {
+      console.log('[GitController][message:end]', {
+        requestId,
+        cmd: payload?.cmd,
+        durationMs: Date.now() - startedAt,
+      });
     }
   }
 }

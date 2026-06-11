@@ -2,6 +2,10 @@
 
 Base URL local/deploy: `http://<host>:3088/v1/api`
 
+Swagger UI local: `http://localhost:3088/v1/docs`
+
+OpenAPI JSON local: `http://localhost:3088/v1/docs-json`
+
 Response chung:
 
 ```json

@@ -62,10 +62,11 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     if (!origin) {
       return this.error(new Error('Missing request origin header'));
     }
+    console.log('GoogleStrategy authenticate - request origin:', joinUrl(origin, 'api/v1/auth/google-oauth/callback')); 
 
     return super.authenticate(req, {
       ...options,
-      callbackURL: joinUrl(origin, 'auth/google-oauth/callback'),
+      callbackURL: joinUrl(origin, 'api/v1/auth/google-oauth/callback'),
     });
   }
 

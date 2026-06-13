@@ -854,7 +854,7 @@ __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Start GitHub OAuth account update', description: 'Auth required. Builds a GitHub OAuth authorization URL and encodes current userId in state to link/update GitHub data for the logged-in user.' }),
     (0, swagger_1.ApiQuery)({ name: 'frontendUrl', required: false, description: 'Frontend origin to redirect back to after OAuth.' }),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    (0, common_1.Post)('auth/github-oauth/redirect-update'),
+    (0, common_1.Get)('auth/github-oauth/redirect-update'),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Query)('frontendUrl')),
     __metadata("design:type", Function),

@@ -410,7 +410,7 @@ export class GatewayController {
   @ApiOperation({ summary: 'Start GitHub OAuth account update', description: 'Auth required. Builds a GitHub OAuth authorization URL and encodes current userId in state to link/update GitHub data for the logged-in user.' })
   @ApiQuery({ name: 'frontendUrl', required: false, description: 'Frontend origin to redirect back to after OAuth.' })
   @UseGuards(JwtAuthGuard)
-  @Post('auth/github-oauth/redirect-update')
+  @Get('auth/github-oauth/redirect-update')  // ← Change from @Post to @Get
   async githubOAuthRedirectUpdate(
     @Req() req: Request,
     @Query('frontendUrl') frontendUrl?: string,

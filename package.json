@@ -43,6 +43,10 @@
     "db:reset": "docker stop devchat-postgres-1 && docker rm devchat-postgres-1 && docker volume rm devchat_postgres_data && yarn db:redis && yarn db:mongodb && docker compose up -d && yarn db:seed",
     "db:redis": "docker stop redis && docker rm redis && docker volume rm devchat_redis_data",
     "db:mongodb": "docker stop devchat-mongodb-1  && docker rm devchat-mongodb-1  && docker volume rm devchat_mongodb_data",
+    "db:seedp": "ts-node -r tsconfig-paths/register libs/database/src/seeds/seed.ts",
+    "db:resetp": "docker stop dev-chat-backend-postgres-1 && docker rm dev-chat-backend-postgres-1 && docker volume rm dev-chat-backend_postgres_data && yarn db:redisp && yarn db:mongodbp && docker compose up -d && yarn db:seedp",
+    "db:redisp": "docker stop redis && docker rm redis && docker volume rm dev-chat-backend_redis_data",
+    "db:mongodbp": "docker stop dev-chat-backend-mongodb-1 && docker rm dev-chat-backend-mongodb-1 && docker volume rm dev-chat-backend_mongodb_data",
     "up": "docker compose up -d",
     "down": "docker compose down",
     "cm": "git add . && git commit -m 'ok' && git pull && git push"

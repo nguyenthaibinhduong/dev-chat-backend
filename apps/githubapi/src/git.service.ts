@@ -160,51 +160,163 @@ export class GitService extends BaseService<Message | Channel> {
     state?: string,
     frontendUrl?: string,
   ) {
+    const requestId = Math.random().toString(36).slice(2, 10);
+    console.log('[GitOAuth][callback:start]', {
+      requestId,
+      hasCode: Boolean(code),
+      state,
+      frontendUrl,
+    });
+
     try {
       if (!code) {
         throw new RpcCustomException('Missing code', 400);
       }
 
       // 1) Đổi code -> OAuth App user token
+      console.log('[GitOAuth][step1:token-exchange]', { requestId });
       const result = await this.exchangeOAuthCodeForToken(code);
       if (!result.ok) {
+        console.error('[GitOAuth][step1:error]', {
+          requestId,
+          status: result.status,
+          error: result.error,
+        });
         throw new RpcCustomException(
           `token exchange failed: ${result.status} ${result.error}`,
           400,
         );
       }
       const userToken = result.token!;
+      console.log('[GitOAuth][step1:success]', { requestId, hasToken: Boolean(userToken) });
 
       // 2) Lấy GitHub user + email
-      const ghUser = await this.fetchGitHubUser(userToken);
-      let email = ghUser.email ?? (await this.fetchPrimaryEmail(userToken));
-      if (!email) {
-        email = `${ghUser.id}+noreply@users.github.com`; // fallback
+      console.log('[GitOAuth][step2:fetch-user]', { requestId });
+      let ghUser: any;
+      try {
+        ghUser = await this.fetchGitHubUser(userToken);
+        console.log('[GitOAuth][step2:user-fetched]', {
+          requestId,
+          userId: ghUser?.id,
+          login: ghUser?.login,
+          hasEmail: Boolean(ghUser?.email),
+        });
+      } catch (err: any) {
+        console.error('[GitOAuth][step2:fetch-user-error]', {
+          requestId,
+          message: err?.message,
+          stack: err?.stack,
+        });
+        throw err;
+      }
+
+      let email: string;
+      try {
+        email = ghUser.email ?? (await this.fetchPrimaryEmail(userToken));
+        if (!email) {
+          email = `${ghUser.id}+noreply@users.github.com`; // fallback
+        }
+        console.log('[GitOAuth][step2:email]', {
+          requestId,
+          email,
+          source: ghUser.email ? 'profile' : 'primary_emails',
+        });
+      } catch (err: any) {
+        console.error('[GitOAuth][step2:email-error]', {
+          requestId,
+          message: err?.message,
+        });
+        throw err;
       }
 
       // 3) Tìm user trong DB
-      let user: any = null;
+      // Decode state để extract userId (nếu có)
+      let stateUserId: string | null = null;
       if (state) {
-        user = await this.userRepo.findOne({ where: { id: state } });
-      } else {
-        user = await this.userRepo.findOne({ where: { github_email: email } });
+        try {
+          const decoded = JSON.parse(
+            Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+          );
+          stateUserId = decoded?.userId;
+          console.log('[GitOAuth][step3:state-decode]', {
+            requestId,
+            stateUserId,
+            hasNext: Boolean(decoded?.next),
+          });
+        } catch (err: any) {
+          console.warn('[GitOAuth][step3:state-decode-warning]', {
+            requestId,
+            message: err?.message,
+          });
+        }
+      }
+
+      console.log('[GitOAuth][step3:db-lookup]', { requestId, stateUserId, email });
+      let user: any = null;
+      try {
+        if (stateUserId) {
+          user = await this.userRepo.findOne({ where: { id: stateUserId } });
+          console.log('[GitOAuth][step3:lookup-by-state-userid]', {
+            requestId,
+            stateUserId,
+            found: Boolean(user),
+            userId: user?.id,
+          });
+        } else {
+          user = await this.userRepo.findOne({ where: { github_email: email } });
+          console.log('[GitOAuth][step3:lookup-by-email]', {
+            requestId,
+            email,
+            found: Boolean(user),
+            userId: user?.id,
+          });
+        }
+      } catch (err: any) {
+        console.error('[GitOAuth][step3:db-lookup-error]', {
+          requestId,
+          message: err?.message,
+          stack: err?.stack,
+        });
+        throw err;
       }
 
       // ==== CASE: USER ĐÃ TỒN TẠI ====
       if (user) {
-        user = await this.updateGithubUserInfoIfChanged(user.id, userToken);
+        console.log('[GitOAuth][step4:existing-user]', { requestId, userId: user.id });
+        try {
+          user = await this.updateGithubUserInfoIfChanged(user.id, userToken);
+          console.log('[GitOAuth][step4:user-updated]', {
+            requestId,
+            userId: user.id,
+            verified: user.github_verified,
+            hasInstallation: Boolean(user.github_installation_id),
+          });
+        } catch (err: any) {
+          console.error('[GitOAuth][step4:update-error]', {
+            requestId,
+            message: err?.message,
+          });
+          throw err;
+        }
 
         // (1) Nếu user đã verified → không cần install nữa
-        if (user.github_verified && !state) {
+        if (user.github_verified && !stateUserId) {
+          console.log('[GitOAuth][return:verified-no-state]', { requestId, userId: user.id });
           return {
             user: { id: user.id },
             isInstall: false,
           };
         }
         if (
-          (!user.github_installation_id && state) ||
-          (state && !user.github_verified)
+          (!user.github_installation_id && stateUserId) ||
+          (stateUserId && !user.github_verified)
         ) {
+          console.log('[GitOAuth][return:needs-install]', {
+            requestId,
+            userId: user.id,
+            hasInstallation: Boolean(user.github_installation_id),
+            hasState: Boolean(stateUserId),
+          });
           const nextUrl = this.normalizeFrontendUrl(frontendUrl);
           const statePayload = { next: nextUrl, userId: user.id };
           const encoded = Buffer.from(
@@ -221,7 +333,8 @@ export class GitService extends BaseService<Message | Channel> {
         }
 
         // (3) Nếu chưa verified + chưa có installationId + không có state → bắt cài app
-        if (!user.github_verified && !user.github_installation_id && !state) {
+        if (!user.github_verified && !user.github_installation_id && !stateUserId) {
+          console.log('[GitOAuth][return:force-install]', { requestId, userId: user.id });
           const nextUrl = this.normalizeFrontendUrl(frontendUrl);
           const statePayload = { next: nextUrl, userId: user.id };
           const encoded = Buffer.from(
@@ -238,6 +351,7 @@ export class GitService extends BaseService<Message | Channel> {
         }
 
         // Mặc định fallback
+        console.log('[GitOAuth][return:fallback]', { requestId, userId: user.id });
         return {
           user: { id: user.id },
           isInstall: false,
@@ -245,18 +359,38 @@ export class GitService extends BaseService<Message | Channel> {
       }
 
       // ==== CASE: USER MỚI ====
-      user = this.userRepo.create({
+      console.log('[GitOAuth][step5:create-new-user]', {
+        requestId,
         email,
-        username: ghUser.login ?? null,
-        role: 'user',
-        github_user_id: String(ghUser.id),
-        github_avatar: ghUser.avatar_url,
-        github_email: email,
-        github_verified: true, // với user mới thì cho verified luôn
-        provider: 'github',
-        provider_id: String(ghUser.id),
+        login: ghUser.login,
       });
-      await this.userRepo.save(user);
+      try {
+        user = this.userRepo.create({
+          email,
+          username: ghUser.login ?? null,
+          role: 'user',
+          github_user_id: String(ghUser.id),
+          github_avatar: ghUser.avatar_url,
+          github_email: email,
+          github_verified: true, // với user mới thì cho verified luôn
+          provider: 'github',
+          provider_id: String(ghUser.id),
+        });
+        await this.userRepo.save(user);
+        console.log('[GitOAuth][step5:user-created]', {
+          requestId,
+          userId: user.id,
+          email,
+        });
+      } catch (err: any) {
+        console.error('[GitOAuth][step5:create-error]', {
+          requestId,
+          message: err?.message,
+          code: err?.code,
+          stack: err?.stack,
+        });
+        throw err;
+      }
 
       const nextUrl = this.normalizeFrontendUrl(frontendUrl);
       const statePayload = { next: nextUrl, userId: user.id };
@@ -276,14 +410,28 @@ export class GitService extends BaseService<Message | Channel> {
         },
       };
 
+      console.log('[GitOAuth][return:new-user]', {
+        requestId,
+        userId: user.id,
+        needsInstall: true,
+      });
       return { nextUrl: installUrl, user, isInstall: true };
     } catch (error: any) {
+      console.error('[GitOAuth][callback:error]', {
+        requestId,
+        message: error?.message,
+        code: error?.code,
+        status: error?.status,
+        isRpcCustomException: error instanceof RpcCustomException,
+        stack: error?.stack,
+      });
+
       if (error instanceof RpcCustomException) {
         throw error;
       }
       throw new RpcCustomException(
-        'Không thể xác thực người dùng GitHub hoặc đã tồn tại tài khoản',
-        404,
+        `GitHub OAuth failed: ${error?.message || 'Unknown error'}`,
+        error?.status || 400,
       );
     }
   }
